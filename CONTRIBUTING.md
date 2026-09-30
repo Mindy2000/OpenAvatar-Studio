@@ -16,7 +16,7 @@ python3 -m venv .venv
 .venv/bin/pip-audit -r requirements.txt
 ```
 
-Windows 将 `.venv/bin/` 换为 `.venv\Scripts\`，创建环境时可使用 `python`。UI 检查自动创建临时数据目录和服务，结束后清理测试人物，不需要启动真实用户数据库。`pytest` 也使用隔离目录。
+Windows 将 `.venv/bin/` 换为 `.venv\Scripts\`，创建环境时可使用 `python`。UI 检查自动创建临时数据目录和服务，结束后清理测试人物，不需要启动真实用户数据库。`pytest` 也使用隔离目录，并为每项测试提供内存中的临时凭据库，不读取或修改系统钥匙串；测试结束后凭据自动丢弃。
 
 手动开发时运行 `.venv/bin/python -m uvicorn openavatar.main:app --host 127.0.0.1 --port 8767 --reload`；若不想使用个人数据，请先通过环境变量设置另一个 `OPENAVATAR_DATA_DIR`。
 

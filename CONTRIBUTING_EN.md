@@ -16,7 +16,7 @@ python3 -m venv .venv
 .venv/bin/pip-audit -r requirements.txt
 ```
 
-On Windows replace `.venv/bin/` with `.venv\Scripts\`; use `python` to create the environment if appropriate. UI checks create their own temporary data/server and remove test avatars afterward. They do not need your personal database. Pytest also isolates its data.
+On Windows replace `.venv/bin/` with `.venv\Scripts\`; use `python` to create the environment if appropriate. UI checks create their own temporary data/server and remove test avatars afterward. They do not need your personal database. Pytest also isolates its data and uses a fresh in-memory credential store for each test, without reading or changing the OS keyring. Test credentials are discarded afterward.
 
 For manual development, run `.venv/bin/python -m uvicorn openavatar.main:app --host 127.0.0.1 --port 8767 --reload`. Set a separate `OPENAVATAR_DATA_DIR` first when you do not want to use personal data.
 
