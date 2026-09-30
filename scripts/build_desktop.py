@@ -51,13 +51,13 @@ def main() -> int:
         print(" ".join(command))
         return 0
     if not pyinstaller_available():
-        print("未安装 PyInstaller。可运行：")
+        print("PyInstaller is not installed. Run:")
         print(f"{sys.executable} -m pip install pyinstaller")
-        print("然后重新运行：")
+        print("Then run:")
         print(f"{sys.executable} scripts/build_desktop.py")
         return 2
     subprocess.run(command, cwd=ROOT, check=True)
-    print("桌面应用构建完成，输出目录：dist/")
+    print("Desktop build complete. Output directory: dist/")
     return 0
 
 
