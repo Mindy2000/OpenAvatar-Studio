@@ -40,3 +40,5 @@ Launch on each target platform and verify pages, data location, credential save/
 Packages currently lack formal signing. Release notes should state OS/architecture, signing status, external dependencies, and actual validation scope. Do not promise zero-configuration operation on every system. Source publication and a production desktop release have separate acceptance requirements.
 
 The build runs `scripts/check_desktop_bundle.py` against the frozen application with disposable data, checking the homepage, empty avatar list, templates, avatar creation, export, and WebSocket. Linux uses a virtual display for the desktop window. These checks do not validate paid cloud services, code signing, or compatibility with every device.
+
+macOS builds are separate for Apple silicon (`macos-latest` / arm64) and Intel (`macos-15-intel` / x64), with native build and startup checks. ZIPs, checksums, and Actions artifact names include architecture to prevent collisions. Intel is checked on macOS 15; this does not establish compatibility with every older macOS release.

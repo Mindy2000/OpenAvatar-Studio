@@ -40,3 +40,5 @@ python scripts/package_release.py --version v0.1.0
 当前包未正式签名。发布说明应明确平台/架构、未签名状态、外部依赖和已验证范围，不承诺所有系统无需额外配置即可运行。源码公开与桌面正式版发布是两个不同的验收范围。
 
 构建流程会运行 `scripts/check_desktop_bundle.py`，在临时数据目录实际启动打包后的程序，验证首页、空人物列表、模板、人物创建、导出与 WebSocket。Linux 使用虚拟显示器运行桌面窗口。这些检查不包含真实云端付费服务、系统签名或所有设备的兼容性验收。
+
+macOS 分为 Apple 芯片版（`macos-latest` / arm64）和 Intel 版（`macos-15-intel` / x64），分别在对应云端机器构建与启动验收。ZIP、校验文件和 Actions 产物名称包含架构，避免覆盖或下载混淆。Intel 版在 macOS 15 上验收，不代表所有旧版 macOS 都已验证。
