@@ -8,7 +8,13 @@ OpenAvatar Studio 是一个本地运行的数字人创建与管理工具。你�
 
 当前版本为 **0.1.0 发布候选**，适合本机体验和开发。源码不包含演示人物、个人数据库、API Key 或本地模型权重；首次使用从空人物列表开始。云端功能需要自己的服务账号，可能产生费用。
 
-## 启动
+## 桌面版下载
+
+按设备下载 ZIP 并完整解压。桌面包已包含 Python，无需另外安装。当前为未正式签名的测试版。
+
+[Windows x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-windows-x64.zip) · [Mac Apple silicon](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-macos-arm64.zip) · [Mac Intel](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-macos-x64.zip) · [Linux x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-linux-x64.zip)
+
+## 源码启动
 
 需要 Python 3.11 或更新版本。下载源码并解压，进入项目目录：
 
@@ -18,7 +24,7 @@ OpenAvatar Studio 是一个本地运行的数字人创建与管理工具。你�
 
 脚本创建 `.venv`、安装依赖并启动本机服务，默认地址是 `http://127.0.0.1:8767`。首次安装需要联网。不要直接打开 `openavatar/static/index.html`。
 
-若仓库 Releases 已提供对应平台的桌面包，可使用桌面启动器。桌面版会选择可用端口并打开浏览器；源码版与桌面版的数据位置不同，见[用户手册](docs/GUIDE.md)。不要将尚未发布的安装包视为可下载版本。
+桌面启动器会选择可用端口并打开浏览器。源码版与桌面版的数据位置不同，见[用户手册](docs/GUIDE.md)。
 
 ## 核心能力
 

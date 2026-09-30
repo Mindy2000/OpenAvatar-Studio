@@ -16,7 +16,7 @@
 
 ### 桌面版
 
-若 Releases 已提供与你的操作系统及处理器架构匹配的软件包，解压后运行 macOS 的 `OpenAvatar Studio.app`、Windows 的 `OpenAvatar Studio.exe`，或 Linux 目录内的 `OpenAvatar Studio`。
+从 [Releases](https://github.com/Mindy2000/OpenAvatar-Studio/releases) 下载与你的操作系统及处理器架构匹配的软件包。桌面包已包含 Python，无需另装。完整解压后运行 macOS 的 `OpenAvatar Studio.app`、Windows 的 `OpenAvatar Studio.exe`，或 Linux 目录内的 `OpenAvatar Studio`。
 
 桌面启动器运行本机服务并打开浏览器，不是内嵌浏览器的原生编辑器。它从 8767 起寻找可用端口，窗口显示实际地址和数据目录。退出启动器可停止服务。当前包未做正式签名，系统可能提示未知发布者；只有确认来源后再依照操作系统提示处理。打包和平台验收见[发布指南](../packaging/README.md)。
 

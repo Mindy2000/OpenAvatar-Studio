@@ -110,3 +110,5 @@ Deleting an avatar removes current records and its asset directory, not previous
 - Desktop package issues: try the source installation for diagnosis. Windows/Linux desktop behavior requires native-platform verification.
 
 See [Privacy](PRIVACY_EN.md) for data boundaries and [Security](../SECURITY_EN.md) for reporting.
+
+Desktop downloads for Windows x64, Linux x64 and both Mac architectures are available on [Releases](https://github.com/Mindy2000/OpenAvatar-Studio/releases). They include Python; extract the complete archive before launching.

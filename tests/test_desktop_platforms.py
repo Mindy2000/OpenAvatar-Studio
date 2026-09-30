@@ -32,3 +32,46 @@ finally:
     server.should_exit = True
 """
     subprocess.run([sys.executable, '-c', code], env={**os.environ, 'OPENAVATAR_DATA_DIR': str(tmp_path)}, check=True, timeout=30)
+
+
+def test_startup_failure_does_not_show_running_window(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from openavatar import desktop
+    server = SimpleNamespace(should_exit=False)
+    runtime = desktop.DesktopRuntime('127.0.0.1', 8767, 'http://127.0.0.1:8767', tmp_path)
+    monkeypatch.setattr(desktop, 'runtime_from_args', lambda port: runtime)
+    monkeypatch.setattr(desktop, 'start_server', lambda runtime: server)
+    monkeypatch.setattr(desktop, 'wait_until_ready', lambda *args, **kwargs: False)
+    seen = []
+    monkeypatch.setattr(desktop, 'show_startup_error', lambda: seen.append('error'))
+    monkeypatch.setattr(desktop, 'run_tk_window', lambda *args: seen.append('window'))
+    monkeypatch.setattr(desktop, 'open_browser', lambda *args: seen.append('browser'))
+    assert desktop.main([]) == 1
+    assert seen == ['error']
+    assert server.should_exit
+
+
+def test_readiness_rejects_unrelated_http_service(tmp_path):
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from openavatar import desktop
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'{"unrelated": true}')
+
+        def log_message(self, *args):
+            pass
+
+    with HTTPServer(('127.0.0.1', 0), Handler) as http:
+        thread = threading.Thread(target=http.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = http.server_port
+            runtime = desktop.DesktopRuntime('127.0.0.1', port, f'http://127.0.0.1:{port}', tmp_path)
+            assert not desktop.wait_until_ready(runtime, timeout=0.3)
+        finally:
+            http.shutdown()
+            thread.join(timeout=2)

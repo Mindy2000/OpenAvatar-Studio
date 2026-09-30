@@ -8,7 +8,13 @@ OpenAvatar Studio is a locally running avatar creation and management tool. Buil
 
 The current version is **0.1.0 release candidate**, intended for local evaluation and development. The source contains no demo avatars, personal databases, API keys, or local model weights. A fresh installation starts with an empty avatar list. Cloud features require your own accounts and may incur costs.
 
-## Start
+## Desktop downloads
+
+Download and fully extract the ZIP for your device. Python is included; no separate Python installation is needed. These are unsigned preview builds.
+
+[Windows x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-windows-x64.zip) · [Mac Apple silicon](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-macos-arm64.zip) · [Mac Intel](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-macos-x64.zip) · [Linux x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-linux-x64.zip)
+
+## Run from source
 
 Use Python 3.11 or newer. Download and extract the source, then open the project directory:
 
@@ -18,7 +24,7 @@ Use Python 3.11 or newer. Download and extract the source, then open the project
 
 The scripts create `.venv`, install dependencies, and start a local service at `http://127.0.0.1:8767` by default. Initial installation needs internet access. Do not open `openavatar/static/index.html` directly.
 
-If Releases offers a desktop package for your platform, you can use its launcher. It selects a free local port and opens a browser. Desktop and source installations use different data locations; see the [user guide](docs/GUIDE_EN.md). Package availability depends on what has actually been released.
+The desktop launcher selects a free local port and opens a browser. Desktop and source installations use different data locations; see the [user guide](docs/GUIDE_EN.md).
 
 ## Core capabilities
 

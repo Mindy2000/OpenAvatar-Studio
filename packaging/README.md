@@ -45,3 +45,6 @@ python scripts/package_release.py --version v0.1.0
 macOS 分为 Apple 芯片版（`macos-latest` / arm64）和 Intel 版（`macos-15-intel` / x64），分别在对应云端机器构建与启动验收。ZIP、校验文件和 Actions 产物名称包含架构，避免覆盖或下载混淆。Intel 版在 macOS 15 上验收，不代表所有旧版 macOS 都已验证。
 
 归档包含第三方许可汇总、项目 LICENSE 和安装说明。打包前运行 `python scripts/collect_release_licenses.py`。macOS 使用 ditto，Linux 保留符号链接；云端会解压最终 ZIP 并再次执行程序启动检查。标签触发的 Release 为草稿，检查完成后再公开。
+
+
+云端还会通过打包后的程序检查真实系统凭据库：使用随机测试账号保存测试值，在独立进程中读取，再删除并确认不存在，不使用真实 API Key。Linux 云端提供临时 D-Bus/Secret Service 会话；用户电脑仍需要可用的桌面凭据服务。自动发布流程不会修改已有版本及其文件，替换构建必须使用新版本号。

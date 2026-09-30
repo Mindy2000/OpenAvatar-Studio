@@ -44,11 +44,14 @@ jobs:
         run: python -m pip install -r requirements-packaging.txt
       - name: Test
         run: python -m pip install -r requirements-dev.txt && python -m pytest -q
+      - name: Install Linux credential service
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
       - name: Build desktop bundle
         run: python scripts/build_desktop.py
       - name: Verify frozen application (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run -a python scripts/check_desktop_bundle.py
+        run: dbus-run-session -- bash scripts/check_linux_desktop.sh scripts/check_desktop_bundle.py
       - name: Verify frozen application (macOS and Windows)
         if: runner.os != 'Linux'
         run: python scripts/check_desktop_bundle.py
@@ -68,7 +71,7 @@ jobs:
         shell: bash
       - name: Verify extracted release (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run -a python scripts/check_release_archive.py
+        run: dbus-run-session -- bash scripts/check_linux_desktop.sh scripts/check_release_archive.py
       - name: Verify extracted release (macOS and Windows)
         if: runner.os != 'Linux'
         run: python scripts/check_release_archive.py
@@ -98,5 +101,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --generate-notes --verify-tag --draft
-          gh release upload "$RELEASE_TAG" release/* --clobber
+          # Never change an existing release, including drafts. A new version is required.
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release already exists; leaving its files unchanged."
+            exit 0
+          fi
+          gh release create "$RELEASE_TAG" --generate-notes --verify-tag --draft
+          gh release upload "$RELEASE_TAG" release/*

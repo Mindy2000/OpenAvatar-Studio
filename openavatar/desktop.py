@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import urllib.request
 import os
 import socket
 import sys
@@ -67,17 +69,39 @@ def start_server(runtime: DesktopRuntime) -> uvicorn.Server:
     return server
 
 
-def wait_until_ready(runtime: DesktopRuntime, timeout: float = 12.0) -> bool:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(0.4)
-            try:
-                sock.connect((runtime.host, runtime.port))
-                return True
-            except OSError:
-                time.sleep(0.2)
+def wait_until_ready(runtime: DesktopRuntime, timeout: float = 12.0, *, server=None) -> bool:
+    deadline = time.monotonic() + timeout
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    while time.monotonic() < deadline:
+        if server is not None and server.should_exit:
+            return False
+        try:
+            if server is None or server.started:
+                with opener.open(runtime.url + "/api/health", timeout=0.5) as response:
+                    health = json.loads(response.read(65536))
+                if health.get("ok") is True and "version" in health:
+                    return True
+        except (OSError, ValueError, AttributeError):
+            pass
+        time.sleep(0.2)
     return False
+
+
+def show_startup_error() -> None:
+    message = "OpenAvatar 启动失败。请检查数据目录是否可写、端口是否可用，然后重试。 / OpenAvatar failed to start. Check data-directory permissions and available ports, then retry."
+    if sys.stderr is not None:
+        print(message, file=sys.stderr)
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            messagebox.showerror(APP_NAME, message, parent=root)
+        finally:
+            root.destroy()
+    except Exception:
+        pass
 
 
 def open_browser(url: str) -> None:
@@ -140,13 +164,30 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="OpenAvatar Studio desktop launcher")
     parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8767")))
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--credential-check", choices=("write", "read", "delete", "absent"), help=argparse.SUPPRESS)
+    parser.add_argument("--credential-check-id", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    runtime = runtime_from_args(args.port)
-    runtime.data_dir.mkdir(parents=True, exist_ok=True)
-    server = start_server(runtime)
-    if wait_until_ready(runtime) and not args.no_browser:
-        open_browser(runtime.url)
-    return run_tk_window(runtime, server)
+    if args.credential_check:
+        from openavatar.credential_check import check_credential
+        return check_credential(args.credential_check, args.credential_check_id)
+    server = None
+    try:
+        runtime = runtime_from_args(args.port)
+        runtime.data_dir.mkdir(parents=True, exist_ok=True)
+        server = start_server(runtime)
+        if not wait_until_ready(runtime, server=server):
+            raise RuntimeError("Local service did not become ready")
+    except Exception:
+        if server is not None:
+            server.should_exit = True
+        show_startup_error()
+        return 1
+    try:
+        if not args.no_browser:
+            open_browser(runtime.url)
+        return run_tk_window(runtime, server)
+    finally:
+        server.should_exit = True
 
 
 if __name__ == "__main__":

@@ -38,6 +38,19 @@ def main() -> None:
     if system == "Darwin":
         executable = dist / "OpenAvatar Studio.app" / "Contents" / "MacOS" / "OpenAvatar Studio"
     assert executable.is_file(), executable
+    # Separate frozen processes prove persistence across restarts, using no real key.
+    import uuid
+    account = str(uuid.uuid4())
+    def credential_check(action):
+        subprocess.run([str(executable), "--credential-check", action,
+                        "--credential-check-id", account], check=True, timeout=30)
+    try:
+        credential_check("write")
+        credential_check("read")
+    finally:
+        credential_check("delete")
+    credential_check("absent")
+    print(f"CREDENTIAL_STORE_OK {system} {platform.machine()}")
     # Inspect build inputs before the application has a chance to create runtime data.
     for path in dist.rglob("*"):
         assert path.suffix not in {".sqlite", ".db"}, f"Bundled database: {path}"

@@ -45,3 +45,6 @@ The build runs `scripts/check_desktop_bundle.py` against the frozen application 
 macOS builds are separate for Apple silicon (`macos-latest` / arm64) and Intel (`macos-15-intel` / x64), with native build and startup checks. ZIPs, checksums, and Actions artifact names include architecture to prevent collisions. Intel is checked on macOS 15; this does not establish compatibility with every older macOS release.
 
 Release archives include collected third-party notices, project LICENSE and installation instructions. Run `python scripts/collect_release_licenses.py` before packaging. macOS uses ditto and Linux preserves symbolic links; CI extracts the final ZIP and repeats the application startup checks. Tag-triggered release creation now produces a draft for final review, not an immediately public release.
+
+
+CI also tests the native OS credential store from the frozen application: a unique test account is written, read by a separate process, deleted and confirmed absent. No real API key is used. Linux CI supplies a disposable D-Bus/Secret Service session; users still need a working desktop credential service. Automatic release creation never changes an existing release or its files; use a new version for replacement builds.
