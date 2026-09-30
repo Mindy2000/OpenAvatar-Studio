@@ -5,6 +5,11 @@ permissions:
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version (does not publish a release)"
+        required: true
+        default: "preview"
   push:
     tags:
       - "v*"
@@ -54,8 +59,19 @@ jobs:
           name: desktop-diagnostics-${{ matrix.platform }}-${{ matrix.arch }}
           path: output/desktop-smoke.log
           if-no-files-found: ignore
+      - name: Collect third-party notices
+        run: python scripts/collect_release_licenses.py
       - name: Package release files
-        run: python scripts/package_release.py --version "${{ github.ref_name }}" --platform "${{ matrix.platform }}" --arch "${{ matrix.arch }}"
+        env:
+          PACKAGE_VERSION: ${{ inputs.version || github.ref_name }}
+        run: python scripts/package_release.py --version "$PACKAGE_VERSION" --platform "${{ matrix.platform }}" --arch "${{ matrix.arch }}"
+        shell: bash
+      - name: Verify extracted release (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python scripts/check_release_archive.py
+      - name: Verify extracted release (macOS and Windows)
+        if: runner.os != 'Linux'
+        run: python scripts/check_release_archive.py
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -82,5 +98,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --generate-notes --verify-tag
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --generate-notes --verify-tag --draft
           gh release upload "$RELEASE_TAG" release/* --clobber

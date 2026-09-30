@@ -22,4 +22,4 @@
 - [ ] Create/import/export/inspect avatars and exercise required media flows from an empty database.
 - [ ] Do not send real materials to unauthorized providers; use test accounts for live cloud checks.
 - [ ] State OS/architecture, unsigned status, optional dependencies, validation scope, and known limits.
-- [ ] Push `v*` tags only after release approval; tag workflows automatically publish Releases.
+- [ ] Push `v*` tags only after release approval; tag workflows create draft Releases for final review.

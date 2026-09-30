@@ -12,6 +12,7 @@ Use Python 3.11+ and build on the target operating system/processor architecture
 python -m pip install -r requirements-packaging.txt
 python scripts/build_desktop.py --dry-run
 python scripts/build_desktop.py
+python scripts/collect_release_licenses.py
 python scripts/package_release.py --version v0.1.0
 ```
 
@@ -23,13 +24,13 @@ Desktop data belongs in the OS application-data directory or `OPENAVATAR_DATA_DI
 
 - `quality.yml`: compilation, critical lint, automated tests, browser/WebSocket checks, and dependency audit for PRs and main/master pushes.
 - `build-desktop.yml`: manual runs and `v*` tags build on native macOS, Windows, and Linux runners and upload Actions artifacts.
-- Manual runs only produce artifacts for review. Pushing a `v*` tag additionally creates/updates a **public Release** and uploads archives/checksums. Rerunning a tag replaces matching files.
+- Manual runs only produce artifacts for review. Pushing a `v*` tag additionally creates/updates a **draft Release** and uploads archives/checksums. Rerunning a tag replaces matching files.
 
-Tag pushes are publication actions: finish the [checklist](RELEASE_CHECKLIST_EN.md) and approve the release first. A configured matrix does not prove native-platform acceptance.
+Tag pushes create release drafts: finish the [checklist](RELEASE_CHECKLIST_EN.md) and approve the release first. A configured matrix does not prove native-platform acceptance.
 
 ## Clean release sources
 
-Personal data, credential stores, virtual environments, old specs/builds, and local audit reports are not source inputs. Do not archive the entire development folder. Check Git history before the first public release: deleting a working-tree file does not remove old content. Keep histories containing old demos/private material local and use a reviewed clean public history.
+Personal data, credential stores, virtual environments, old specs/builds, and local audit reports are not source inputs. Do not archive the entire development folder. Check Git history before the first release: deleting a working-tree file does not remove old content. Keep histories containing old demos/private material local and use a reviewed clean public history.
 
 Rebuild from clean sources instead of reusing old packages. Inspect archive contents, processor architecture, project LICENSE, bundled third-party license/notice files, and SHA-256. The project license alone does not replace third-party notices.
 
@@ -42,3 +43,5 @@ Packages currently lack formal signing. Release notes should state OS/architectu
 The build runs `scripts/check_desktop_bundle.py` against the frozen application with disposable data, checking the homepage, empty avatar list, templates, avatar creation, export, and WebSocket. Linux uses a virtual display for the desktop window. These checks do not validate paid cloud services, code signing, or compatibility with every device.
 
 macOS builds are separate for Apple silicon (`macos-latest` / arm64) and Intel (`macos-15-intel` / x64), with native build and startup checks. ZIPs, checksums, and Actions artifact names include architecture to prevent collisions. Intel is checked on macOS 15; this does not establish compatibility with every older macOS release.
+
+Release archives include collected third-party notices, project LICENSE and installation instructions. Run `python scripts/collect_release_licenses.py` before packaging. macOS uses ditto and Linux preserves symbolic links; CI extracts the final ZIP and repeats the application startup checks. Tag-triggered release creation now produces a draft for final review, not an immediately public release.

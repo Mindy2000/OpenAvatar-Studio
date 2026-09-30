@@ -28,6 +28,8 @@ def build_command(name: str = "OpenAvatar Studio") -> list[str]:
         "--noconfirm",
         "--clean",
         "--windowed",
+        "--exclude-module",
+        "readline",
         "--collect-all",
         "keyring",
         "--add-data",

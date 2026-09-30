@@ -12,6 +12,7 @@
 python -m pip install -r requirements-packaging.txt
 python scripts/build_desktop.py --dry-run
 python scripts/build_desktop.py
+python scripts/collect_release_licenses.py
 python scripts/package_release.py --version v0.1.0
 ```
 
@@ -23,9 +24,9 @@ python scripts/package_release.py --version v0.1.0
 
 - `quality.yml`：PR 和 main/master 推送执行编译、关键静态检查、自动测试、浏览器/WebSocket 检查及依赖漏洞审计。
 - `build-desktop.yml`：手动运行或推送 `v*` 标签时，在 macOS、Windows、Linux 原生 runner 上分别构建并上传 Actions artifact。
-- 手动运行仅提供构建产物供检查。推送 `v*` 标签会进一步创建或更新对应 **公开 Release** 并上传 ZIP/校验文件；同标签重跑会覆盖同名文件。
+- 手动运行仅提供构建产物供检查。推送 `v*` 标签会进一步创建或更新对应 **Release 草稿** 并上传 ZIP/校验文件；同标签重跑会覆盖同名文件。
 
-因此标签推送属于发布动作，应在[清单](RELEASE_CHECKLIST.md)完成并确认发布后进行。工作流中有跨平台配置，不等于已完成对应平台的实机验收。
+因此标签推送会创建发布草稿，应在[清单](RELEASE_CHECKLIST.md)完成并确认发布后进行。工作流中有跨平台配置，不等于已完成对应平台的实机验收。
 
 ## 干净发布源
 
@@ -42,3 +43,5 @@ python scripts/package_release.py --version v0.1.0
 构建流程会运行 `scripts/check_desktop_bundle.py`，在临时数据目录实际启动打包后的程序，验证首页、空人物列表、模板、人物创建、导出与 WebSocket。Linux 使用虚拟显示器运行桌面窗口。这些检查不包含真实云端付费服务、系统签名或所有设备的兼容性验收。
 
 macOS 分为 Apple 芯片版（`macos-latest` / arm64）和 Intel 版（`macos-15-intel` / x64），分别在对应云端机器构建与启动验收。ZIP、校验文件和 Actions 产物名称包含架构，避免覆盖或下载混淆。Intel 版在 macOS 15 上验收，不代表所有旧版 macOS 都已验证。
+
+归档包含第三方许可汇总、项目 LICENSE 和安装说明。打包前运行 `python scripts/collect_release_licenses.py`。macOS 使用 ditto，Linux 保留符号链接；云端会解压最终 ZIP 并再次执行程序启动检查。标签触发的 Release 为草稿，检查完成后再公开。

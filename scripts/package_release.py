@@ -4,6 +4,8 @@ import argparse
 import hashlib
 import platform
 import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -39,7 +41,32 @@ def main() -> int:
     platform_name = args.platform.lower().replace("darwin", "macos")
     bundle = select_bundle(dist, platform_name)
     base_name = f"OpenAvatar-Studio-{args.version}-{platform_name}-{args.arch}"
-    archive_path = Path(shutil.make_archive(str(release / base_name), "zip", root_dir=dist, base_dir=bundle.name))
+    notices = ROOT / "build" / "THIRD_PARTY_LICENSES"
+    if not (notices / "inventory.json").is_file():
+        raise SystemExit("Missing release notices; run scripts/collect_release_licenses.py first")
+    archive_path = release / f"{base_name}.zip"
+    with tempfile.TemporaryDirectory(prefix="openavatar-package-") as temporary:
+        staging = Path(temporary)
+        shutil.copytree(bundle, staging / bundle.name, symlinks=True)
+        shutil.copytree(notices, staging / "THIRD_PARTY_LICENSES")
+        shutil.copyfile(ROOT / "LICENSE", staging / "LICENSE")
+        (staging / "INSTALL.txt").write_text(
+            "OpenAvatar Studio - desktop preview\n\n"
+            "Extract the whole archive before launching. Keep all bundled files together.\n"
+            "macOS: open OpenAvatar Studio.app. Windows: open OpenAvatar Studio/OpenAvatar Studio.exe.\n"
+            "Linux: run OpenAvatar Studio/OpenAvatar Studio. Python is bundled.\n"
+            "This preview is not developer-signed or notarized. Cloud services require your own API keys.\n"
+            "FFmpeg, optional OCR engines and a Linux secret-service backend may require separate installation.\n"
+            "Guide: https://github.com/Mindy2000/OpenAvatar-Studio/blob/main/docs/GUIDE_EN.md\n",
+            encoding="utf-8",
+        )
+        if platform.system() == "Darwin":
+            subprocess.run(["ditto", "-c", "-k", "--sequesterRsrc", str(staging), str(archive_path)], check=True)
+        elif platform.system() == "Linux":
+            subprocess.run(["zip", "-q", "-r", "-y", str(archive_path), "."], cwd=staging, check=True)
+        else:
+            shutil.make_archive(str(release / base_name), "zip", root_dir=staging)
+
     digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
     checksum = release / f"{archive_path.name}.sha256"
     checksum.write_text(f"{digest}  {archive_path.name}\n", encoding="ascii")

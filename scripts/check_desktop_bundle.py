@@ -1,6 +1,7 @@
 """Start the frozen application with disposable data and verify its core endpoints."""
 from __future__ import annotations
 
+import argparse
 import asyncio
 import io
 import json
@@ -29,13 +30,16 @@ async def check_call(base: str, avatar_id: str) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dist", type=Path, default=ROOT / "dist")
+    dist = parser.parse_args().dist.resolve()
     system = platform.system()
-    executable = ROOT / "dist" / "OpenAvatar Studio" / ("OpenAvatar Studio.exe" if system == "Windows" else "OpenAvatar Studio")
+    executable = dist / "OpenAvatar Studio" / ("OpenAvatar Studio.exe" if system == "Windows" else "OpenAvatar Studio")
     if system == "Darwin":
-        executable = ROOT / "dist" / "OpenAvatar Studio.app" / "Contents" / "MacOS" / "OpenAvatar Studio"
+        executable = dist / "OpenAvatar Studio.app" / "Contents" / "MacOS" / "OpenAvatar Studio"
     assert executable.is_file(), executable
     # Inspect build inputs before the application has a chance to create runtime data.
-    for path in (ROOT / "dist").rglob("*"):
+    for path in dist.rglob("*"):
         assert path.suffix not in {".sqlite", ".db"}, f"Bundled database: {path}"
         assert path.name != ".env" and "demo_assets" not in path.parts, f"Private content: {path}"
     with socket.socket() as sock:
