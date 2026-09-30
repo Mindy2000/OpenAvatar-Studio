@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>OpenAvatar Studio</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./audio.css">
+</head>
+<body>
+  <div class="privacy-ribbon"><span class="privacy-dot"></span> <span data-i18n="app.privacyRibbon">开源数字人工作室 · 每次云端数据传输都需要用户明确选择</span></div>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="brand-mark">O</span><span>OpenAvatar <i>Studio</i></span></a>
+    <button class="mobile-menu-button" data-action="toggle-mobile-menu" aria-label="打开导航">☰</button>
+    <div class="top-actions">
+      <span id="modelStatus" class="status-pill">正在检查本地模型…</span>
+      <button class="ghost" data-action="open-onboarding" data-i18n="nav.onboarding">新手向导</button>
+      <button class="ghost" data-action="open-capabilities" data-i18n="nav.capabilities">能力状态</button>
+      <button class="ghost" data-action="open-diagnostics" data-i18n="nav.diagnostics">诊断中心</button>
+      <button class="ghost" data-action="open-settings" data-i18n="nav.settings">全局 AI 设置</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="homeView" class="view">
+      <div class="hero">
+        <div class="eyebrow" data-i18n="home.eyebrow">OPEN-SOURCE · LOCAL-FIRST</div>
+        <h1 data-i18n-html="home.title">把珍贵的表达，<br><em>变成可陪伴的数字生命。</em></h1>
+        <p data-i18n="home.lead">选择真实素材路线或虚构设定路线，在本机完成资料、声音、视觉身份、里世界和长期记忆构建。</p>
+        <div class="hero-actions">
+          <button class="primary large" data-action="new-real-avatar" data-i18n-html="home.realAction">从真实素材创建 <span>→</span></button>
+          <button class="secondary large" data-action="new-fictional-avatar" data-i18n="home.fictionalAction">创建虚构数字人</button>
+          <button class="secondary large" data-action="open-existing" data-i18n="home.openExisting">打开已有数字人</button>
+          <label class="secondary large import-package-button"><span data-i18n="home.importPackage">导入 OpenAvatar 人物包</span><input id="packageInput" type="file" accept=".zip,.openavatar.zip"></label>
+        </div>
+        <div class="route-board">
+          <article class="route-card real-route" data-action="new-real-avatar">
+            <span data-i18n="home.realCardKicker">真实素材路线</span><h3 data-i18n="home.realCardTitle">文字人格 + 声音复制 + 视觉身份</h3>
+            <p data-i18n="home.realCardText">适合把本人或授权对象做成多模态数字人。必须有文字/聊天记录，音频用于声音。</p>
+            <button class="primary" data-i18n="home.realCardButton">开始真实路线</button>
+          </article>
+          <article class="route-card fictional-route" data-action="new-fictional-avatar">
+            <span data-i18n="home.fictionalCardKicker">虚构设定路线</span><h3 data-i18n="home.fictionalCardTitle">问答设定 + 模板导入 + 可运行里世界</h3>
+            <p data-i18n="home.fictionalCardText">适合原创角色。普通用户逐步问答，高级用户下载模板后导入完整设定。</p>
+            <button class="secondary" data-i18n="home.fictionalCardButton">开始虚构路线</button>
+          </article>
+        </div>
+        <div class="guide-hints">
+          <span data-i18n="home.hintReal">真实路线：文字/聊天记录 + 声音样本</span><span data-i18n="home.hintFictional">虚构路线：问答创建或模板导入</span><span data-i18n="home.hintPackage">人物包导入前会先预检</span>
+        </div>
+        <div class="trust-row">
+          <span data-i18n="home.trustLocal">⌂ 原始资料本地管理</span><span data-i18n="home.trustEditable">◇ 可编辑人格与记忆</span><span data-i18n="home.trustClear">↗ 数据去向清楚可见</span>
+        </div>
+      </div>
+      <div class="avatar-section">
+        <div class="section-heading"><div><span data-i18n="home.avatarSectionKicker">你的数字人</span><h2 data-i18n="home.avatarSectionTitle">继续上次的故事</h2></div><small id="avatarCount">0 个项目</small></div>
+        <div id="avatarGrid" class="avatar-grid"></div>
+      </div>
+    </section>
+
+    <section id="wizardView" class="view hidden">
+      <div class="wizard-shell">
+        <aside class="steps">
+          <button class="back-link" data-action="home">← 返回首页</button>
+          <div class="step active" data-step="1"><b>1</b><span id="step1Title">身份与授权<small>创建基础档案</small></span></div>
+          <div class="step" data-step="2"><b>2</b><span>导入资料<small id="step2Hint">聊天、截图、声音、照片</small></span></div>
+          <div class="step" data-step="3"><b>3</b><span>选择 AI<small>自己的 API 或本地模型</small></span></div>
+          <div class="step" data-step="4"><b>4</b><span>理解与编辑<small>确认人格和表达方式</small></span></div>
+          <div class="step" data-step="5"><b>5</b><span>完成<small>开始聊天</small></span></div>
+        </aside>
+        <div class="wizard-content">
+          <div id="step1" class="step-panel">
+            <span class="panel-kicker">01 · 身份与授权</span>
+            <h2 id="wizardTitle">你想创建谁？</h2>
+            <p id="wizardLead" class="lead">人物资料只保存在这台电脑上。真实素材路线和虚构设定路线从入口开始分开构建。</p>
+            <form id="identityForm" class="form-grid">
+              <input type="hidden" name="creation_mode" value="real">
+              <label class="full">数字人的名字<input name="name" maxlength="80" required placeholder="例如：小满"></label>
+              <label class="full">创建用途<textarea name="purpose" maxlength="500" placeholder="例如：记录自己的表达方式，创建一个可长期陪伴的数字分身"></textarea></label>
+              <label>你们的关系<input name="relationship" maxlength="80" value="朋友"></label>
+              <label>人物类型<select name="subject_kind"><option value="self">我自己</option><option value="authorized_person">已明确授权的人</option><option value="fictional">完全虚构的人物</option></select></label>
+              <section class="form-section full">
+                <div class="section-subhead"><div><span>LANGUAGE & WORLD</span><h3 data-i18n="identity.languageTitle">数字人语言与世界</h3></div><small>界面语言和数字人语言彼此独立；世界场景会影响 Builder、事件和一致性检查。</small></div>
+                <div class="form-grid compact-grid">
+                  <label><span data-i18n="identity.avatarLanguage">数字人主要语言</span><select name="avatar_primary_language" id="avatarLanguageSelect"></select></label>
+                  <label><span data-i18n="identity.responseMode">回复语言策略</span><select name="avatar_response_mode" id="avatarResponseModeSelect"></select></label>
+                  <label><span data-i18n="identity.worldRegion">世界场景</span><select name="world_region" id="worldRegionSelect"></select></label>
+                  <label><span data-i18n="identity.worldType">世界类型</span><select name="world_type" id="worldTypeSelect"></select></label>
+                  <label class="full"><span data-i18n="identity.customWorld">自定义世界规则</span><textarea name="world_region_custom" id="worldCustomRules" rows="4" placeholder='{"name":"星港城","social_rules":["舰队制度","资源配给"],"holidays":["归航日"]}'></textarea><small data-i18n="identity.customWorldHelp">自定义世界可填写 JSON，也可以先留空，后续在里世界中补充。</small></label>
+                </div>
+              </section>
+              <label class="check-card full"><input type="checkbox" name="adult_subject" checked><span><b>人物是成年人</b><small>未成年人角色可以创建，但不会提供性化未成年人的功能。</small></span></label>
+              <label class="check-card full"><input type="checkbox" name="consent_confirmed" required><span><b>我确认拥有这些资料的使用权</b><small>这是本人资料、完全虚构资料，或资料主体已经明确授权。</small></span></label>
+              <div class="form-actions full"><button type="button" class="secondary" data-action="home">取消</button><button class="primary">创建并继续 →</button></div>
+            </form>
+          </div>
+
+          <div id="step2" class="step-panel hidden">
+            <span class="panel-kicker">02 · 导入资料</span>
+            <h2>用熟悉的痕迹认识这个人</h2>
+            <p id="importLead" class="lead">不必一次准备齐全。原始文件保存在本机；只有选择云端API并确认后，完成分析所需的内容才会发送给用户指定的服务商。</p>
+            <div id="fictionalPathSwitch" class="segmented hidden">
+              <button type="button" class="active" data-action="set-fictional-flow" data-flow="guided">问答式创建</button>
+              <button type="button" data-action="set-fictional-flow" data-flow="template">模板文件创建</button>
+            </div>
+            <section id="guidedBuilderPanel" class="guided-builder hidden">
+              <div class="guided-head"><div><span>问答式 Builder</span><h3 id="guidedTitle">一步一步生成设定</h3></div><b id="guidedProgress">0%</b></div>
+              <p id="guidedPrompt">回答几个问题，系统会把答案变成可审批的世界事实。</p>
+              <div id="worldModuleSelector" class="module-selector"></div>
+              <label class="sr-only" for="guidedAnswer">当前设定问题的答案</label><textarea id="guidedAnswer" rows="5" placeholder="写下你的想法。可以很短，也可以很详细。"></textarea>
+              <div class="form-actions"><button class="secondary" data-action="skip-guided-question">稍后再答</button><button class="primary" data-action="save-guided-answer">保存这一项</button></div>
+            </section>
+            <div id="realUploadGrid" class="upload-grid">
+              <label class="upload-card"><input type="file" data-category="conversation" accept=".txt,.md,.log,.json,.jsonl,.csv,.tsv" multiple><span class="upload-icon coral">≡</span><b>聊天记录</b><small>TXT、JSON、CSV 等</small><em>选择文件</em></label>
+              <label class="upload-card"><input type="file" data-category="image" accept="image/*" multiple><span class="upload-icon lilac">▧</span><b>聊天截图 / 照片</b><small>本地 OCR 或形象参考</small><em>选择图片</em></label>
+              <label class="upload-card"><input type="file" data-category="audio" accept="audio/*" multiple><span class="upload-icon mint">⌁</span><b>声音样本</b><small>WAV、MP3、M4A 等</small><em>选择音频</em></label>
+            </div>
+            <div id="fictionalUploadGrid" class="upload-grid hidden">
+              <article id="templateDownloadCard" class="template-card full hidden">
+                <div><span>高级用户</span><b>先下载模板，填写后再导入</b><small>模板会明确身份、人格、说话方式、里世界、视觉和声音字段，减少随意文件导致的构建偏差。</small></div>
+                <button type="button" class="secondary" data-action="download-templates">下载设定模板</button>
+              </article>
+              <label class="upload-card template-only hidden"><input type="file" data-category="fictional" accept=".md,.markdown,.txt,.json,.yaml,.yml" multiple><span class="upload-icon coral">◇</span><b>导入已填写模板</b><small>Markdown、JSON、YAML</small><em>选择设定文件</em></label>
+              <label class="upload-card fictional-media"><input type="file" data-category="image" accept="image/*" multiple><span class="upload-icon lilac">▧</span><b>视觉候选</b><small>候选图需要批准后使用</small><em>选择图片</em></label>
+              <label class="upload-card fictional-media"><input type="file" data-category="audio" accept="audio/*" multiple><span class="upload-icon mint">⌁</span><b>声音素材</b><small>可选，用于试听或接入语音服务</small><em>选择音频</em></label>
+            </div>
+            <div class="local-note"><b>本地处理说明</b><span>截图会优先使用本机 OCR 或用户配置的 OCR；音频会进入声音复制流程，先保存样本，再完成质量检查、转写确认、复刻服务选择和试听确认。</span></div>
+            <div id="uploadList" class="upload-list"></div>
+            <div class="form-actions"><button class="secondary" data-step-go="1">上一步</button><button class="primary" data-action="choose-ai">选择 AI 方式 →</button></div>
+          </div>
+
+          <div id="step4" class="step-panel hidden">
+            <span class="panel-kicker">04 · 理解与编辑</span>
+            <h2>这是系统理解出的 TA</h2>
+            <p class="lead">每一项都可以修改。资料不足的地方保持空白，不会自动编造。</p>
+            <form id="personaForm" class="form-grid">
+              <label class="full">人物摘要<textarea name="summary" rows="5"></textarea></label>
+              <label class="full">核心性格（每行一项）<textarea name="traits" rows="5"></textarea></label>
+              <label class="full">说话方式<textarea name="speaking_style" rows="4"></textarea></label>
+              <label class="full">人物边界<textarea name="boundaries" rows="4"></textarea></label>
+              <div id="analysisMethod" class="method-note full"></div>
+              <div class="form-actions full"><button type="button" class="secondary" data-step-go="3">上一步</button><button class="primary">保存并继续 →</button></div>
+            </form>
+          </div>
+
+          <div id="step3" class="step-panel hidden">
+            <span class="panel-kicker">03 · 选择 AI</span>
+            <h2>让谁来完成分析和对话？</h2>
+            <p class="lead">先在“全局 AI 设置”里保存模型连接。API Key 只交给本机后端保存到系统凭据库，不写入页面、数据库或人物包。</p>
+            <form id="modelForm" class="form-grid">
+              <label class="full">这个数字人使用的模型连接<select id="wizardConnectionSelect" name="connection_id"></select></label>
+              <div id="wizardConnectionHint" class="connection-hint full"></div>
+              <div class="connection-actions full"><button type="button" class="secondary" data-action="open-settings">新建或测试连接</button><button type="button" class="secondary" data-action="refresh-connections">刷新连接列表</button></div>
+              <div id="modelTestResult" class="local-note full"><b>密钥与费用</b><span>API Key使用系统凭据库保存。主动联系、重新分析和聊天都会调用当前模型，云端模式可能产生费用。</span></div>
+              <div class="form-actions full"><button type="button" class="secondary" data-step-go="2">上一步</button><button class="primary">保存并开始分析 →</button></div>
+            </form>
+          </div>
+
+          <div id="step5" class="step-panel hidden finish-panel">
+            <div class="finish-mark">✓</div><span class="panel-kicker">创建完成</span><h2>数字人已经准备好了</h2>
+            <p>你可以马上聊天，也可以继续补充资料。主动联系默认关闭；开启后会调用当前模型，云端模式可能产生API费用。</p>
+            <div class="finish-actions"><button class="primary large" data-action="open-current">开始聊天 →</button><button class="secondary large" data-action="home">返回首页</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="studioView" class="view hidden">
+      <div class="studio-layout">
+        <aside class="studio-sidebar">
+          <button class="back-link" data-action="home">← 所有数字人</button>
+          <div class="profile-orb" id="profileInitial">O</div><h2 id="studioName">数字人</h2><p id="studioPurpose"></p>
+          <nav><button class="active" data-tab="chat">对话</button><button data-tab="history">聊天记录</button><button data-tab="timeline">人生档案</button><button data-tab="training">构建中心</button><button data-tab="profile">人格与资料</button><button data-tab="settings">设置与导出</button></nav>
+          <div class="sidebar-foot"><span class="privacy-dot"></span> 数据由当前模型设置处理</div>
+        </aside>
+        <div class="studio-main">
+          <section id="chatTab" class="tab-panel chat-panel">
+            <div id="readinessBanner" class="readiness-banner"></div>
+            <div id="videoCallPanel" class="video-call-panel">
+              <div><span>REALTIME VIDEO</span><b>North/Atlas 实时视频通话</b><small id="videoCallStatus">检查配置中…</small></div>
+              <div class="inline-actions">
+                <button class="secondary" data-action="refresh-video-call">刷新</button>
+                <button class="primary" data-action="start-video-call">开始视频通话</button>
+                <button class="secondary" data-action="prepare-video-background">准备背景</button>
+                <button class="secondary" data-action="prepare-video-flip">翻转镜头</button>
+                <button class="danger" data-action="end-video-call">结束</button>
+              </div>
+              <div id="videoCallDetails" class="video-call-details"></div>
+              <div id="videoLiveKitStage" class="video-livekit-stage">
+                <div class="video-placeholder"><b>LiveKit Avatar</b><span>开始通话后会显示 North 返回的实时头像画面。</span></div>
+              </div>
+              <div id="videoCallControls" class="video-call-controls hidden">
+                <video id="localCameraPreview" class="local-camera-preview hidden" autoplay muted playsinline aria-label="本机摄像头预览"></video>
+                <label class="full" for="videoTranscriptInput">你想说的话</label>
+                <textarea id="videoTranscriptInput" rows="2" placeholder="可以点击麦克风说话，也可以直接输入文字。"></textarea>
+                <div class="form-actions">
+                  <button type="button" class="secondary" data-action="listen-video-turn" title="使用浏览器语音识别">麦克风输入</button>
+                  <button type="button" class="primary" data-action="send-video-turn">发送这一轮</button>
+                  <button type="button" class="secondary" data-action="toggle-call-camera" aria-pressed="true">关闭摄像头</button>
+                  <button type="button" class="secondary" data-action="toggle-call-microphone" aria-pressed="true">静音</button>
+                </div>
+                <small id="videoTurnStatus">通话已连接。浏览器语音识别可能使用操作系统或浏览器提供的服务；也可以只输入文字。</small>
+              </div>
+            </div>
+            <div id="messageList" class="messages"></div>
+            <form id="chatForm" class="composer"><label class="sr-only" for="chatMessageInput">聊天消息</label><textarea id="chatMessageInput" name="message" rows="1" placeholder="说点什么…" required></textarea><button class="primary">发送</button></form>
+          </section>
+          <section id="historyTab" class="tab-panel hidden settings-panel timeline-panel">
+            <span class="panel-kicker">CHAT HISTORY</span><h2>聊天记录</h2>
+            <p class="lead">统一搜索永久保留的导入历史，以及 OpenAvatar 启用后产生的新聊天。</p>
+            <div class="timeline-toolbar">
+              <input id="historySearch" type="search" placeholder="搜索文字或说话人" />
+              <input id="historyDay" type="text" placeholder="按日筛选：2026-09-18" />
+              <select id="historyLayer"><option value="all">全部</option><option value="historical">永久历史</option><option value="runtime">系统新聊天</option></select>
+              <button class="primary" data-action="search-history">搜索</button>
+            </div>
+            <div class="timeline-kind-switch"><button class="active" data-history-kind="official">正式聊天</button><button data-history-kind="preview">预览测试聊天</button></div>
+            <div id="historySummary" class="timeline-summary">正在读取…</div>
+            <div id="historyRecords" class="timeline-records"></div>
+          </section>
+          <section id="timelineTab" class="tab-panel hidden settings-panel timeline-panel">
+            <span class="panel-kicker">LIFE ARCHIVE</span><h2>人生档案</h2>
+            <p class="lead">修改或删除会封存此后的聊天和由聊天造成的共同变化。真实历史、现实日期和独立世界状态不会回滚。</p>
+            <div class="timeline-kind-switch"><button class="active" data-timeline-kind="official">正式人生档案</button><button data-timeline-kind="preview">预览测试档案</button></div>
+            <div class="timeline-metrics"><article><span>永久历史</span><b id="timelineHistoricalCount">0</b></article><article><span>当前新聊天</span><b id="timelineRuntimeCount">0</b></article><article><span>候选媒体</span><b id="timelineCandidateCount">0</b></article></div>
+            <div class="timeline-note" id="timelineRuleNote">预览聊天与正式人生档案完全隔离，除非以后明确转为正式经历。</div>
+            <div class="timeline-section"><h3>当前时间线</h3><div id="activeTimelineRecords" class="timeline-records"></div></div>
+            <div class="timeline-section"><h3>封存版本</h3><small>恢复后，当前版本与选中的封存版本互换。</small><div id="timelineBranches" class="timeline-branches"></div></div>
+            <div class="timeline-section"><h3>候选媒体</h3><small>数字人生成的图片和视频可以自动复用；用户上传内容与语音需要再次确认。</small><div id="timelineCandidates" class="timeline-branches"></div></div>
+          </section>
+          <section id="profileTab" class="tab-panel hidden settings-panel">
+            <span class="panel-kicker">人物档案</span><h2>理解、修改与继续补充</h2>
+            <div id="profileSummary" class="profile-summary"></div>
+            <button class="secondary" data-action="continue-import">继续导入资料</button>
+            <div class="evidence-head"><h3>证据库</h3><small>真实素材和虚构设定都会先进入这里</small></div>
+            <div id="evidenceList" class="evidence-list"></div>
+          </section>
+          <section id="trainingTab" class="tab-panel hidden settings-panel">
+            <span class="panel-kicker">构建中心</span><h2 id="buildCenterTitle">从资料到可运行数字人</h2><p id="buildCenterLead" class="lead">这里展示必须项、推荐项、高级项、世界骨架、视觉审批、声音选择和构建任务。</p>
+            <div id="nextActionCard" class="next-action-card"></div>
+            <div class="training-summary"><div><b id="trainingDone">0</b><span>已完成</span></div><div><b id="trainingActive">0</b><span>进行中</span></div><div><b id="trainingWaiting">0</b><span>等待配置</span></div><div><b id="trainingCost">0.00</b><span>已记录费用</span></div></div>
+            <div class="build-toolbar"><button class="secondary" data-action="download-templates">下载设定模板</button><button class="secondary" data-action="run-build-checks">检查设定</button><button class="secondary" data-action="evaluate-avatar">关键盲测</button><button class="secondary" data-action="advance-world">推进里世界</button><button class="secondary" data-action="rollback-world">回滚世界事件</button><button class="secondary" data-action="rebuild-memory-graph">重建记忆图谱</button><button class="secondary" data-action="rebuild-persona-core">重建 Persona Core</button><button class="primary" data-action="run-builder">运行统一 Builder</button></div>
+            <div id="evaluationResult"></div>
+            <div id="buildPanels" class="build-panels"></div>
+            <div class="build-console">
+              <section><header><span>WORLD PROPOSALS</span><b>世界事实审批</b></header><div id="worldProposalList" class="approval-list"></div></section>
+              <section><header><span>VOICE TRANSCRIPTS</span><b>声音转写确认</b></header><div id="transcriptionList" class="approval-list"></div></section>
+              <section><header><span>MODEL ROUTES</span><b>任务模型路由</b></header><div id="modelRouteList" class="route-list"></div></section>
+              <section><header><span>MEMORY GRAPH</span><b>记忆图谱</b></header><div id="memoryGraphList" class="approval-list"></div></section>
+              <section><header><span>PERSONA CORE</span><b>人格核心</b></header><div id="personaCoreList" class="approval-list"></div></section>
+              <section><header><span>DIAGNOSTICS</span><b>诊断与评审</b></header><div id="diagnosticList" class="approval-list"></div></section>
+            </div>
+            <div id="trainingJobs" class="training-jobs"></div>
+          </section>
+          <section id="settingsTab" class="tab-panel hidden settings-panel">
+            <span class="panel-kicker">本地控制</span><h2>主动联系与数据主权</h2>
+            <div class="avatar-model-settings">
+              <h3>这个数字人的模型连接</h3>
+              <p>默认继承全局默认连接；也可以为这个数字人指定一个云端或本地连接。</p>
+              <div class="form-grid">
+                <label>模式<select id="avatarModelMode"><option value="inherit">继承全局默认连接</option><option value="connection">使用指定模型连接</option></select></label>
+                <label>模型连接<select id="avatarConnectionSelect"></select></label>
+                <div id="avatarConnectionHint" class="connection-hint full"></div>
+                <div class="connection-actions full"><button type="button" class="secondary" data-action="open-settings">管理模型连接</button><button type="button" class="secondary" data-action="refresh-connections">刷新连接列表</button></div>
+              </div>
+              <button class="secondary" data-action="save-avatar-model-settings">保存这个数字人的模型设置</button>
+              <div id="avatarModelResult" class="method-note"></div>
+            </div>
+            <label class="toggle-row"><span><b>允许主动联系</b><small>默认关闭。开启后，程序运行期间会按设定间隔调用当前模型；云端模式可能产生API费用，本地模式会消耗电脑资源。</small></span><input id="proactiveToggle" type="checkbox"></label>
+            <label>最短联系间隔（分钟）<input id="proactiveInterval" type="number" min="15" max="10080" value="360"></label>
+            <div class="proactive-rules form-grid">
+              <label>每日最多联系次数<input id="proactiveDailyMax" type="number" min="0" max="24" value="2"></label>
+              <label>用户回复后冷却（分钟）<input id="proactiveCooldown" type="number" min="15" max="10080" value="120"></label>
+              <label>允许联系时段<input id="proactiveWindows" placeholder="09:00-12:00, 18:00-22:30"></label>
+              <label>安静时段<input id="proactiveQuiet" placeholder="23:00-08:30"></label>
+              <label class="full">可聊主题<input id="proactiveTopics" placeholder="近况, 关心, 延续上次话题"></label>
+              <label class="full">语气<input id="proactiveTone" value="自然、简短、有边界感"></label>
+              <label class="check-card full"><input id="proactiveUseMemory" type="checkbox" checked><span><b>允许使用长期记忆选择话题</b><small>只使用当前数字人的记忆与设定。</small></span></label>
+              <label class="check-card full"><input id="proactiveAdvanceWorld" type="checkbox"><span><b>允许推动里世界轻微事件</b><small>高影响事件仍进入世界事实审批。</small></span></label>
+            </div>
+            <div class="button-stack"><button class="primary" data-action="save-proactive">保存主动联系设置</button><button class="secondary" data-action="export-avatar">导出完整人物包</button><button class="danger" data-action="delete-avatar">永久删除这个数字人</button></div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="onboardingDialog" class="wide-dialog">
+    <form method="dialog" class="dialog-card onboarding-card"><button class="dialog-close">×</button><span class="panel-kicker">首次使用向导</span><h2>先理解，再开始创建</h2><p>我建议使用“步骤卡 + 关键提示”：第一次用步骤卡讲清楚全局流程，进入系统后再用页面内提示辅助操作。</p>
+      <div class="onboarding-steps">
+        <article><b>1</b><h3>选择路线</h3><p>真实素材路线用于本人或授权人物；虚构设定路线用于原创角色和可运行里世界。</p></article>
+        <article><b>2</b><h3>准备资料</h3><p>真实路线必须有文本内容，声音用于音色；虚构路线默认问答式，高级用户先下载模板再导入。</p></article>
+        <article><b>3</b><h3>连接模型</h3><p>用户可以使用任意兼容 API 或本地模型。Key 只保存到系统凭据库，不进入人物包。</p></article>
+        <article><b>4</b><h3>进入构建中心</h3><p>构建中心会告诉你下一步该补什么，并处理视觉审批、声音转写、世界事实和质量评测。</p></article>
+      </div>
+      <div class="privacy-summary"><b>数据边界</b><span>上传文件默认在本机保存。只有用户选择云端服务并确认后，必要资料片段才会发送给对应服务商。</span></div>
+      <div class="form-actions"><button type="button" class="secondary" data-action="open-privacy">查看权限与隐私说明</button><button type="button" class="primary" data-action="complete-onboarding">我知道了，开始使用</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="diagnosticsDialog" class="wide-dialog">
+    <form method="dialog" class="dialog-card"><button class="dialog-close">×</button><span class="panel-kicker">系统诊断</span><h2>运行状态检查</h2><p>这里把常见问题翻译成可操作提示：模型连接、数据库、目录权限、OCR 和本地服务都会检查。</p>
+      <div id="diagnosticsSummary" class="diagnostics-summary"></div>
+      <div id="diagnosticsList" class="diagnostics-list"></div>
+      <div class="form-actions"><button type="button" class="secondary" data-action="refresh-diagnostics">重新检查</button><button type="button" class="primary" data-action="open-settings">管理模型连接</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="privacyDialog" class="wide-dialog">
+    <form method="dialog" class="dialog-card"><button class="dialog-close">×</button><span class="panel-kicker">权限与隐私</span><h2>哪些数据会去哪里</h2>
+      <div class="privacy-grid">
+        <article><b>本机保存</b><p>数据库、原始素材、导出包和构建记录默认保存在本机 data 目录。</p></article>
+        <article><b>云端模型</b><p>只有用户配置云端 API 并确认后，分析和聊天所需片段才会发送给用户选择的服务商。</p></article>
+        <article><b>截图 OCR</b><p>优先使用本机已有 OCR；用户也可接入自己的本地命令、本地 HTTP 服务或云端 OCR API。</p></article>
+        <article><b>长期记忆</b><p>确认后的聊天、OCR 文本和转写文本会进入本地记忆与证据库，可删除数字人时一并删除。</p></article>
+        <article><b>声音与视觉</b><p>声音复刻、TTS、参考图生成需要单独确认，可能产生费用。</p></article>
+        <article><b>人物包</b><p>人物包不包含 API Key，但可能包含聊天、声音、图片和世界设定，因此仍是敏感文件。</p></article>
+      </div>
+      <div class="form-actions"><button type="button" class="primary" data-action="close-privacy">知道了</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="packageDialog" class="wide-dialog">
+    <form method="dialog" class="dialog-card"><button class="dialog-close">×</button><span class="panel-kicker">人物包预检</span><h2>导入前确认</h2><p>人物包可能包含敏感资料。系统会先检查格式、版本、内容清单和密钥声明，确认后才导入本机。</p>
+      <div id="packagePreview" class="package-preview"></div>
+      <div class="form-actions"><button type="button" class="secondary" data-action="cancel-package-import">取消</button><button type="button" class="primary" data-action="confirm-package-import">确认导入</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="packageExportDialog" class="wide-dialog">
+    <form method="dialog" class="dialog-card"><button class="dialog-close" aria-label="关闭">×</button><span class="panel-kicker">人物包隐私</span><h2>选择要带走的原始资料</h2><p>人格、世界和审批结果始终包含；API Key 永远不会导出。原始资料可能非常敏感，请只勾选接收方确实需要的内容。</p>
+      <div class="check-grid">
+        <label class="check-card"><input id="exportConversations" type="checkbox" checked><span><b>原始聊天与对话记录</b><small>包含确认过的聊天素材和应用内聊天历史。</small></span></label>
+        <label class="check-card"><input id="exportAudio" type="checkbox" checked><span><b>音频与声音样本</b><small>不包含 API Key；外部复刻声音需要重新绑定。</small></span></label>
+        <label class="check-card"><input id="exportImages" type="checkbox" checked><span><b>照片与视觉素材</b><small>包含人物包中的本地图片文件。</small></span></label>
+        <label class="check-card"><input id="exportVideo" type="checkbox" checked><span><b>生成视频</b><small>可单独排除视频文件和视频验收记录。</small></span></label>
+        <label class="check-card"><input id="exportCalls" type="checkbox"><span><b>实时通话历史</b><small>包含通话摘要和逐轮文字，不包含 API Key。</small></span></label>
+      </div>
+      <div class="form-actions"><button type="button" class="secondary" data-action="cancel-package-export">取消</button><button type="button" class="primary" data-action="confirm-package-export">生成并下载人物包</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="visualClassifyDialog" class="wide-dialog" aria-labelledby="visualClassifyTitle">
+    <form method="dialog" class="dialog-card" onsubmit="return false"><span class="panel-kicker">视觉一致性</span><h2 id="visualClassifyTitle">整理视觉素材</h2>
+      <label>素材包名称<input id="visualSetLabel" maxlength="200" autocomplete="off"></label>
+      <label>必须保持不变的特征<textarea id="visualSetRules" rows="4" placeholder="例如：黑色短发，蓝色外套，右手佩戴手表；可用逗号分隔"></textarea></label>
+      <p class="muted">保存后，后续生图和视频会自动使用这组规则及参考图。</p>
+      <div class="form-actions"><button type="button" class="secondary" data-action="cancel-visual-classify">取消</button><button type="button" class="primary" data-action="confirm-visual-classify">保存素材包</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="capabilitiesDialog" class="wide-dialog">
+    <form method="dialog" class="dialog-card"><button class="dialog-close">×</button><span class="panel-kicker">能力状态</span><h2>每个能力在哪里运行</h2><p>OpenAvatar 不是固定离线或固定云端。每个能力可以单独选择本地、云端、手动或暂不启用。</p>
+      <div id="capabilityList" class="capability-list"></div>
+      <div class="form-actions"><button type="button" class="secondary" data-action="refresh-capabilities">刷新状态</button><button type="button" class="primary" data-action="open-settings">配置连接</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog">
+    <form method="dialog" class="dialog-card connection-dialog"><button class="dialog-close">×</button><span class="panel-kicker">模型与数据</span><h2>连接配置中心</h2><p>普通用户不需要编辑 .env。API Key 只在这里输入一次，保存到系统凭据库，页面不会回显，人物包也不会导出。</p>
+      <section class="connection-editor language-editor"><div class="section-subhead"><div><span>LANGUAGE</span><h3 data-i18n="settings.languageTitle">界面语言</h3></div><small data-i18n="settings.languageHelp">界面语言只影响系统文字，不会改变数字人的主要语言。</small></div><div class="language-switch"><button type="button" data-action="set-interface-language" data-language="zh-CN">中文</button><button type="button" data-action="set-interface-language" data-language="en-US">English</button></div></section>
+      <div class="settings-tabs">
+        <button type="button" class="active" data-action="settings-tab" data-settings-tab="providerHubPanel">服务与能力路由</button>
+        <button type="button" data-action="settings-tab" data-settings-tab="modelSettingsPanel">旧版模型连接</button>
+        <button type="button" data-action="settings-tab" data-settings-tab="ocrSettingsPanel">截图 OCR</button>
+        <button type="button" data-action="settings-tab" data-settings-tab="mediaSettingsPanel">声音 / 视觉 / 视频</button>
+      </div>
+      <section id="providerHubPanel" class="settings-section active">
+        <section class="connection-list"><div class="section-subhead"><div><span>PROVIDER HUB</span><h3>统一服务连接</h3></div><small>MiniMax、阿里、OpenRouter、本地服务都在这里保存；一个连接可以提供多种能力。</small></div><div id="providerConnectionList"></div></section>
+        <section class="connection-editor"><h3>新建或更新服务</h3><div class="form-grid">
+          <label>服务类型<select id="providerKind"><option value="minimax">MiniMax（直连）</option><option value="aliyun">阿里云百炼（直连）</option><option value="openrouter">OpenRouter</option><option value="openai_compatible">OpenAI 兼容 API</option><option value="local">本地服务</option><option value="north">North/Atlas</option></select></label>
+          <label>连接名称<input id="providerDisplayName" value="我的 MiniMax"></label>
+          <label class="full">API 地址<input id="providerBaseUrl" value="https://api.minimax.io/v1"></label>
+          <label>API Key<input id="providerApiKey" type="password" autocomplete="new-password" placeholder="只保存到系统安全凭据库"></label>
+          <label>区域（可选）<input id="providerRegion" placeholder="例如 cn / global"></label>
+          <fieldset class="full"><legend>启用能力</legend><div id="providerCapabilityChecks" class="language-switch"></div></fieldset>
+          <details class="advanced-settings full" open><summary>每种能力使用的模型</summary><div id="providerModelFields" class="form-grid"></div></details>
+          <fieldset class="full"><legend>数据授权（可随时关闭）</legend><div id="providerConsentChecks" class="language-switch"></div></fieldset>
+          <label>每日预算上限<input id="providerDailyBudget" type="number" min="0" step="0.01" value="0"><small>0 表示不设上限</small></label>
+          <label>每月预算上限<input id="providerMonthlyBudget" type="number" min="0" step="0.01" value="0"><small>0 表示不设上限</small></label>
+          <label class="full">高级配置（JSON，可覆盖 MiniMax 端点）<textarea id="providerAdvancedConfig" rows="3" placeholder='{"endpoints":{"tts":"/t2a_v2"}}'></textarea></label>
+        </div><div id="providerResult" class="method-note"></div><div class="form-actions"><button type="button" class="secondary" data-action="test-provider-connection">测试并读取模型</button><button type="button" class="primary" data-action="save-provider-connection">保存服务连接</button></div></section>
+        <section class="connection-editor"><div class="section-subhead"><div><span>CAPABILITY ROUTING</span><h3>能力路由与自动降级</h3></div><small>为每项能力选择主连接、备用连接和模型；运行时真正按这里执行。</small></div><label>路由作用范围<select id="capabilityRouteScope"><option value="global">所有数字人（全局）</option><option value="avatar">当前数字人</option></select></label><div id="capabilityRouteList"></div></section>
+      </section>
+      <section id="modelSettingsPanel" class="settings-section">
+      <section class="connection-list"><div class="section-subhead"><div><span>CHAT MODEL</span><h3>对话模型连接</h3></div><small>分析、聊天、主动联系和构建都使用这里的连接。</small></div><div id="dialogConnectionList"></div></section>
+      <section class="connection-editor">
+        <h3>新建或更新连接</h3>
+        <div class="form-grid">
+          <label>连接类型<select id="connectionType"><option value="cloud_openai">云端 OpenAI 兼容 API</option><option value="local_openai">本地 OpenAI 兼容服务</option><option value="ollama">Ollama</option><option value="custom_local_adapter">自定义本地适配器</option></select></label>
+          <label>连接名称<input id="connectionName" value="我的模型连接"></label>
+          <details class="advanced-settings full"><summary>高级连接设置</summary><div class="form-grid">
+            <label>服务名称<input id="connectionProvider" value="自定义 API"></label>
+            <label>模型名称<input id="connectionModel" value="openrouter/auto"></label>
+            <label class="full">API 地址<input id="connectionBaseUrl" value="https://openrouter.ai/api/v1"></label>
+            <label id="adapterKindLabel">本地适配协议<select id="connectionAdapterKind"><option value="openai_compatible">OpenAI 兼容</option><option value="ollama">Ollama 原生</option></select></label>
+          </div></details>
+          <label>API Key<input id="connectionApiKey" type="password" autocomplete="new-password" placeholder="保存后清空，可留空用于本地服务"></label>
+          <label class="check-card full"><input id="connectionConsent" type="checkbox"><span><b>允许云端连接接收必要文字</b><small>本地连接不需要勾选；云端连接必须勾选后才能保存。</small></span></label>
+        </div>
+        <div id="dialogModelResult" class="method-note"></div>
+        <div class="form-actions"><button type="button" class="secondary" data-action="test-model-connection">测试配置</button><button type="button" class="primary" data-action="save-model-connection">保存连接</button></div>
+      </section>
+      </section>
+      <section id="ocrSettingsPanel" class="settings-section">
+      <section class="connection-editor"><div class="section-subhead"><div><span>OCR</span><h3>截图文字识别</h3></div><small>优先用本机已有 OCR；高级用户可以接入自己的 OCR。</small></div>
+        <div class="security-note"><b>自定义 OCR 安全边界</b><span>本地命令只适合高级用户。请只填写你信任的本机 OCR 程序，不要粘贴陌生人给你的命令。普通用户可以使用系统已检测 OCR、手动补文字，或连接自己信任的本地/云端 OCR 服务。</span></div>
+        <div id="ocrDetectedList" class="connection-list-mini"></div>
+        <div id="ocrConnectionList"></div>
+        <div class="form-grid">
+          <label>OCR 类型<select id="ocrType"><option value="local_command">本地命令 OCR</option><option value="local_http">本地 HTTP OCR</option><option value="cloud_api">云端 OCR API</option></select></label>
+          <label>连接名称<input id="ocrName" value="我的 OCR"></label>
+          <label>服务名称<input id="ocrProvider" value="自定义 OCR"></label>
+          <label>API 地址<input id="ocrBaseUrl" placeholder="http://127.0.0.1:8866/ocr"></label>
+          <label class="full">本地命令模板<input id="ocrCommand" placeholder="tesseract {image} stdout -l chi_sim+eng"></label>
+          <label>API Key<input id="ocrApiKey" type="password" autocomplete="new-password" placeholder="云端 OCR 可填写，保存后清空"></label>
+          <label class="check-card"><input id="ocrKeyRequired" type="checkbox"><span><b>这个 OCR 需要 API Key</b></span></label>
+          <label class="check-card full"><input id="ocrConsent" type="checkbox"><span><b>允许云端 OCR 接收截图图片</b><small>本地命令和本地 HTTP 不需要勾选；云端 OCR 必须让用户知道图片会发送出去。</small></span></label>
+        </div>
+        <div id="ocrResult" class="method-note"></div>
+        <div class="form-actions"><button type="button" class="secondary" data-action="test-ocr-connection">测试 OCR 配置</button><button type="button" class="primary" data-action="save-ocr-connection">保存 OCR</button></div>
+      </section>
+      </section>
+      <section id="mediaSettingsPanel" class="settings-section">
+      <section class="connection-editor"><div class="section-subhead"><div><span>MEDIA SERVICE</span><h3>声音、视觉与实时视频</h3></div><small>声音/参考图使用阿里云百炼；实时视频通话固定使用 North/Atlas，不提供自定义 provider。</small></div>
+        <p>North/Atlas 负责实时口型 Avatar 和 LiveKit 房间。OpenAvatar 负责人格、记忆、TTS、背景、翻转镜头、视觉反馈和结束时释放 North session。</p>
+        <label>阿里云百炼 API Key（声音/参考图，可留空）<input id="dialogAliyunKey" type="password" autocomplete="new-password"></label>
+        <label>声音复刻模型<input id="dialogVoiceCloneModel"></label><label>声音目标模型<input id="dialogVoiceTargetModel"></label><label>参考图模型<input id="dialogImageModel"></label>
+        <label>North/Atlas API Key（实时视频通话）<input id="dialogNorthKey" type="password" autocomplete="new-password"></label>
+        <label>North API 地址<input id="dialogNorthApiUrl" value="https://api.atlasv1.com"></label>
+        <label>North Face URL（可选 HTTPS）<input id="dialogNorthFaceUrl" placeholder="留空时使用当前数字人的 canonical/approved 图"></label>
+        <label>North 空闲清理秒数<input id="dialogNorthIdleTimeout" type="number" min="30" max="3600" value="300"></label>
+        <label>North 每秒估算费用<input id="dialogNorthPrice" type="number" min="0" max="10" step="0.00001" value="0.00194"></label>
+        <label class="check-card"><input id="dialogVideoCallEnabled" type="checkbox" checked><span><b>启用实时视频通话入口</b><small>provider 固定为 North/Atlas。</small></span></label>
+        <label class="check-card"><input id="dialogVideoScene" type="checkbox" checked><span><b>允许准备通话背景</b></span></label>
+        <label class="check-card"><input id="dialogVideoFlip" type="checkbox" checked><span><b>允许翻转镜头任务</b></span></label>
+        <label class="check-card"><input id="dialogVideoVision" type="checkbox" checked><span><b>允许记录视觉反馈</b></span></label>
+        <label class="check-card"><input id="dialogVideoInterrupt" type="checkbox" checked><span><b>允许智能打断状态</b></span></label>
+        <label class="check-card"><input id="dialogMediaConsent" type="checkbox"><span><b>允许在我每次确认后上传授权的声音、照片或实时视频通话数据</b><small>North 会接收身份参考图/Face URL、LiveKit 实时轨道和通话状态；可能按时长计费。</small></span></label>
+        <button type="button" class="secondary" data-action="save-media-settings">保存声音、形象与视频设置</button></section>
+      </section>
+    </form>
+  </dialog>
+  <dialog id="reviewDialog" class="wide-dialog">
+    <form method="dialog" class="dialog-card"><button class="dialog-close" aria-label="关闭">×</button><span class="panel-kicker">构建前检查</span><h2 id="reviewDialogTitle">确认说话人与内容</h2><p id="reviewDialogLead">选择哪些名字代表数字人原型，并取消勾选不希望用于人格与记忆的内容。</p><div id="speakerChoices" class="speaker-choices"></div><label id="fictionalApplyModeLabel" class="hidden">写入方式<select id="fictionalApplyMode"><option value="merge">合并到现有设定（推荐）</option><option value="replace">覆盖现有设定</option></select></label><div class="review-heading"><b>解析内容</b><small id="reviewCount"></small></div><div id="reviewRows" class="review-rows"></div><div class="form-actions"><button type="button" class="secondary" data-action="close-review">稍后处理</button><button type="button" class="primary" data-action="confirm-import">确认并用于构建</button></div></form>
+  </dialog>
+  <aside id="errorTray" class="error-tray hidden" aria-live="assertive"><div><b>操作没有完成</b><span id="errorTrayMessage"></span></div><button type="button" class="secondary" data-action="open-diagnostics">打开诊断</button><button type="button" class="ghost" data-action="dismiss-error" aria-label="关闭错误提示">×</button></aside>
+  <div id="toast" class="toast"></div>
+  <script src="./core.js" defer></script>
+  <script src="./profile.js" defer></script>
+  <script src="./video-call.js" defer></script>
+  <script src="./settings.js" defer></script>
+  <script src="./imports.js" defer></script>
+  <script src="./app.js" defer></script>
+  <script src="./chat.js" defer></script>
+</body>
+</html>

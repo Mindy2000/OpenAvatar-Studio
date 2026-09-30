@@ -1,0 +1,19 @@
+.message-audio {
+  float: right;
+  margin-left: 10px;
+  padding: 0 2px;
+  background: transparent;
+  color: var(--green);
+  font-size: 18px;
+}
+
+.message-audio:hover {
+  color: var(--coral);
+}
+
+.training-preview {
+  display: block;
+  width: min(100%, 260px);
+  margin: 12px 0;
+  border-radius: 12px;
+}

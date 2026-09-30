@@ -1,0 +1,10 @@
+.voice-flow-panel{border:1px solid #e3c5b8;background:#fff6f1}
+.voice-flow-steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:12px}
+.voice-flow-steps span{display:flex;min-height:68px;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:12px;line-height:1.35;color:var(--muted);padding:8px}
+.voice-flow-steps span.done{border-color:#cfe5db;background:#f6fbf8;color:var(--green)}
+.voice-flow-panel p{padding-right:0}
+
+@media(max-width:760px){
+  .voice-flow-steps{grid-template-columns:1fr}
+  .voice-flow-steps span{min-height:auto;justify-content:flex-start;text-align:left}
+}

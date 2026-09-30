@@ -1,0 +1,32 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.playwright-cli/
+.DS_Store
+# The data tree is private; only empty directory placeholders are public.
+data/*
+!data/avatars/
+!data/exports/
+data/avatars/*
+!data/avatars/.gitkeep
+data/exports/*
+!data/exports/.gitkeep
+data/backups/
+# Runtime data and exported character packages must never enter source releases.
+*.sqlite
+*.sqlite-*
+*.db
+*.openavatar.zip
+.env
+.env.*
+!.env.example
+output/
+build/
+dist/
+release/
+*.spec
+_local/
+local-lab/
+experiments/
+private-data/

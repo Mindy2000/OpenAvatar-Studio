@@ -1,0 +1,33 @@
+name: Quality Gate
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install -r requirements-dev.txt ruff pip-audit
+      - name: Syntax
+        run: python -m compileall -q openavatar tests scripts
+      - name: Critical lint checks
+        run: ruff check openavatar tests scripts --select E9,F63,F7,F82
+      - name: Tests
+        run: python -m pytest -q
+      - name: Install browser
+        run: python -m playwright install --with-deps chromium
+      - name: Browser and WebSocket checks
+        run: python scripts/run_ui_checks.py
+      - name: Dependency audit
+        run: pip-audit -r requirements.txt
