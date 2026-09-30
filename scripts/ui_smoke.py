@@ -8,7 +8,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -132,12 +132,12 @@ def main() -> int:
                 page.locator("#personaForm button.primary").click()
                 page.locator("[data-action='open-current']").click()
                 page.wait_for_selector("#studioView:not(.hidden)")
-                assert "正式可用" in page.locator("#readinessBanner").inner_text()
+                expect(page.locator("#readinessBanner")).to_contain_text("正式可用", timeout=15000)
                 page.locator("[data-tab='chat']").click()
                 page.locator("#chatMessageInput").fill("请流式回复一句问候")
                 page.locator("#chatForm button.primary").click()
                 page.wait_for_function("() => !document.querySelector('[data-action=cancel-chat]')")
-                assert "你好，我会依据已经确认的资料回答。" in page.locator("#messageList .message.assistant").last.inner_text()
+                expect(page.locator("#messageList .message.assistant").last).to_contain_text("你好，我会依据已经确认的资料回答。", timeout=15000)
                 page.locator("[data-tab='training']").click()
                 page.wait_for_function("() => document.querySelector('#buildPanels')?.textContent.includes('VISUAL CONTINUITY')")
                 assert "一致性素材包" in page.locator("#buildPanels").inner_text()
