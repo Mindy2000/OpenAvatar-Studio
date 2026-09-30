@@ -13,7 +13,6 @@ import sys
 import urllib.request
 from pathlib import Path
 
-import certifi
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -49,8 +48,13 @@ def main() -> None:
         'bzip2-LICENSE.txt': 'https://sourceware.org/git/?p=bzip2.git;a=blob_plain;f=LICENSE;hb=bzip2-1.0.8',
         'libffi-LICENSE.txt': 'https://raw.githubusercontent.com/libffi/libffi/v3.4.8/LICENSE',
     }
+    try:
+        import certifi
+        context = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        context = ssl.create_default_context()
     for filename, url in sources.items():
-        with urllib.request.urlopen(url, timeout=60, context=ssl.create_default_context(cafile=certifi.where())) as response:
+        with urllib.request.urlopen(url, timeout=60, context=context) as response:
             content = response.read()
         if len(content) < 100 or b'<html' in content[:500].lower():
             raise RuntimeError(f'Invalid notice from {url}')
