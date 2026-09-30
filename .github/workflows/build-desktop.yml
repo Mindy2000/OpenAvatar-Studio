@@ -35,6 +35,19 @@ jobs:
         run: python -m pip install -r requirements-dev.txt && python -m pytest -q
       - name: Build desktop bundle
         run: python scripts/build_desktop.py
+      - name: Verify frozen application (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python scripts/check_desktop_bundle.py
+      - name: Verify frozen application (macOS and Windows)
+        if: runner.os != 'Linux'
+        run: python scripts/check_desktop_bundle.py
+      - name: Upload desktop diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-diagnostics-${{ matrix.platform }}
+          path: output/desktop-smoke.log
+          if-no-files-found: ignore
       - name: Package release files
         run: python scripts/package_release.py --version "${{ github.ref_name }}" --platform "${{ matrix.platform }}"
       - name: Upload artifact
