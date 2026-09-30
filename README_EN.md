@@ -12,7 +12,7 @@ The current version is **0.1.0 release candidate**, intended for local evaluatio
 
 Download and fully extract the ZIP for your device. Python is included; no separate Python installation is needed. These are unsigned preview builds.
 
-[Windows x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-windows-x64.zip) · [Mac Apple silicon](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-macos-arm64.zip) · [Mac Intel](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-macos-x64.zip) · [Linux x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-linux-x64.zip)
+[Windows x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-windows-x64.zip) · [Mac Apple silicon](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-macos-arm64.zip) · [Mac Intel](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-macos-x64.zip) · [Linux x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-linux-x64.zip)
 
 ## Run from source
 

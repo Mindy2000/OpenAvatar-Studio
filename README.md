@@ -12,7 +12,7 @@ OpenAvatar Studio 是一个本地运行的数字人创建与管理工具。你�
 
 按设备下载 ZIP 并完整解压。桌面包已包含 Python，无需另外安装。当前为未正式签名的测试版。
 
-[Windows x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-windows-x64.zip) · [Mac Apple silicon](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-macos-arm64.zip) · [Mac Intel](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-macos-x64.zip) · [Linux x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.1/OpenAvatar-Studio-v0.1.0-rc.1-linux-x64.zip)
+[Windows x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-windows-x64.zip) · [Mac Apple silicon](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-macos-arm64.zip) · [Mac Intel](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-macos-x64.zip) · [Linux x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-linux-x64.zip)
 
 ## 源码启动
 
