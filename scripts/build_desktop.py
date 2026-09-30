@@ -43,6 +43,8 @@ def build_command(name: str = "OpenAvatar Studio") -> list[str]:
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Build OpenAvatar Studio desktop bundle with free tooling.")
     parser.add_argument("--dry-run", action="store_true", help="Only print the command.")
     args = parser.parse_args()
