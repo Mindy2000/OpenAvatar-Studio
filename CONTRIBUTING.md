@@ -13,7 +13,7 @@ python3 -m venv .venv
 .venv/bin/python -m pytest -q
 .venv/bin/ruff check openavatar tests scripts --select E9,F63,F7,F82
 .venv/bin/python scripts/run_ui_checks.py
-.venv/bin/pip-audit -r requirements.txt
+.venv/bin/pip-audit -r requirements.txt -r requirements-dev.txt -r requirements-packaging.txt
 ```
 
 Windows 将 `.venv/bin/` 换为 `.venv\Scripts\`，创建环境时可使用 `python`。UI 检查自动创建临时数据目录和服务，结束后清理测试人物，不需要启动真实用户数据库。`pytest` 也使用隔离目录，并为每项测试提供内存中的临时凭据库，不读取或修改系统钥匙串；测试结束后凭据自动丢弃。

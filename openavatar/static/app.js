@@ -535,13 +535,13 @@ document.addEventListener("click", async event => {
       link.href = URL.createObjectURL(blob); link.download = `${state.current.name}.openavatar.zip`; link.click();
       window.setTimeout(() => URL.revokeObjectURL(link.href), 10000);
       $("#packageExportDialog").close();
-      toast("人物包已导出，包内不包含任何密钥");
+      toast(ui("人物包已导出；专用 API Key 字段未导出。分享前请检查聊天、图片等内容是否含私人信息。", "Package exported without dedicated API key fields. Check conversations, images and other content for private information before sharing."));
     }
     if (action === "delete-avatar") {
-      const confirmation = prompt(`永久删除所有本地资料。请输入“${state.current.name}”确认：`);
+      const confirmation = prompt(ui(`将删除“${state.current.name}”在当前数据目录中的人物记录和素材。已导出文件、历史备份、其他数据目录、云端副本和服务凭据不会删除。请输入人物名称确认：`, `Delete the records and assets for “${state.current.name}” in the current data directory? Exports, backups, other data directories, cloud copies and service credentials will remain. Enter the avatar name to confirm:`));
       if (confirmation === null) return;
       await api(`/api/avatars/${state.currentId}?confirmation=${encodeURIComponent(confirmation)}`, { method: "DELETE" });
-      state.currentId = null; await loadAvatars(); showView("#homeView"); toast("数字人及其本地资料已删除");
+      state.currentId = null; await loadAvatars(); showView("#homeView"); toast(ui("当前人物记录与素材已删除；备份、导出及其他副本仍保留。", "Current avatar records and assets deleted; backups, exports and other copies remain."));
     }
   } catch (error) { toast(error.message, true); }
 });

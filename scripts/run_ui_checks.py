@@ -62,6 +62,7 @@ def main() -> None:
                     raise RuntimeError(f"Server not ready; see {log_path}")
                 asyncio.run(check_websocket(base))
                 subprocess.run([sys.executable, "scripts/ui_smoke.py", "--base-url", base], cwd=ROOT, env=env, check=True)
+                subprocess.run([sys.executable, "scripts/video_call_ui_checks.py", "--base-url", base], cwd=ROOT, env=env, check=True)
                 subprocess.run([sys.executable, "scripts/timeline_ui_smoke.py"], cwd=ROOT, env=env, check=True)
             finally:
                 server.terminate()

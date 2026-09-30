@@ -1,0 +1,39 @@
+name: 问题反馈 / Bug report
+description: 报告运行、安装或文档问题 / Report an application, installation or documentation problem.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "请勿上传 API Key、真人素材、人物包或未检查的日志。安全漏洞请使用 Security → Report a vulnerability。 / Do not include keys, personal materials, avatar packages or unreviewed logs. Report vulnerabilities privately through Security."
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / Version
+      description: 桌面窗口显示的版本或源码提交号 / Desktop version or source commit.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 系统与运行方式 / Environment
+      description: 操作系统版本、处理器、浏览器及桌面包或源码 / OS version, architecture, browser and desktop or source installation.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      description: 请使用虚构资料描述 / Use fictional data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期与实际结果 / Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 已检查的错误信息 / Reviewed error details
+      description: 可选，粘贴前删除密钥、个人内容及私人路径 / Optional. Remove keys, personal content and private paths first.

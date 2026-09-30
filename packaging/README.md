@@ -24,9 +24,9 @@ python scripts/package_release.py --version v0.1.0
 
 - `quality.yml`：PR 和 main/master 推送执行编译、关键静态检查、自动测试、浏览器/WebSocket 检查及依赖漏洞审计。
 - `build-desktop.yml`：手动运行或推送 `v*` 标签时，在 macOS、Windows、Linux 原生 runner 上分别构建并上传 Actions artifact。
-- 手动运行仅提供构建产物供检查。推送 `v*` 标签会进一步创建或更新对应 **Release 草稿** 并上传 ZIP/校验文件；同标签重跑会覆盖同名文件。
+- 手动运行只提供检查用构建产物。推送新的 `v*` 标签，在所有平台验收通过后创建 Release 草稿。已有版本（包括草稿）保持不变，重跑不会替换文件；修正构建应使用新版本号。
 
-因此标签推送会创建发布草稿，应在[清单](RELEASE_CHECKLIST.md)完成并确认发布后进行。工作流中有跨平台配置，不等于已完成对应平台的实机验收。
+先更新 `openavatar/__init__.py` 中的程序版本，再推送对应的 `v<版本>` 标签。云端验收生成草稿后，核对文件与[清单](RELEASE_CHECKLIST.md)，最后公开发布。工作流中有跨平台配置，不等于已完成对应平台的实机验收。
 
 ## 干净发布源
 

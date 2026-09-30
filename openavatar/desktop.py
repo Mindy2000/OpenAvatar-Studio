@@ -15,6 +15,8 @@ from typing import Any
 
 import uvicorn
 
+from openavatar import __version__
+
 APP_NAME = "OpenAvatar Studio"
 
 
@@ -126,7 +128,7 @@ def run_tk_window(runtime: DesktopRuntime, server: uvicorn.Server) -> int:
         return 0
 
     root = tk.Tk()
-    root.title(APP_NAME)
+    root.title(f"{APP_NAME} {__version__}")
     root.geometry("560x360")
     root.minsize(520, 320)
     root.configure(bg="#f7f4ee")
@@ -135,7 +137,7 @@ def run_tk_window(runtime: DesktopRuntime, server: uvicorn.Server) -> int:
         font = ("Arial", size, "bold" if bold else "normal")
         return tk.Label(root, text=text, bg="#f7f4ee", fg="#23211f", font=font, wraplength=480, justify="left")
 
-    label(APP_NAME, 24, True).pack(anchor="w", padx=28, pady=(26, 6))
+    label(f"{APP_NAME} {__version__}", 24, True).pack(anchor="w", padx=28, pady=(26, 6))
     label("本地优先数字人工作室已经在这台电脑上运行。", 13).pack(anchor="w", padx=28)
     status = label(f"访问地址：{runtime.url}\n数据目录：{runtime.data_dir}", 11)
     status.pack(anchor="w", padx=28, pady=(18, 10))

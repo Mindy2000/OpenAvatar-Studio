@@ -170,9 +170,9 @@ async function connectNorthLiveKit(livekit) {
 function disconnectNorthLiveKit() {
   try { state.livekitPublishedTrack?.stop?.(); } catch (_) {}
   try { state.livekitSilenceSource?.stop?.(); } catch (_) {}
-  try { state.livekitRoom?.disconnect?.(); } catch (_) {}
+  try { state.livekitRoom?.disconnect?.()?.catch?.(() => null); } catch (_) {}
   try { state.speechRecognition?.stop?.(); } catch (_) {}
-  state.userMedia?.getTracks().forEach(track => track.stop());
+  state.userMedia?.getTracks().forEach(track => { try { track.stop(); } catch (_) {} });
   state.livekit = null;
   state.livekitRoom = null;
   state.livekitAudioDest = null;
@@ -224,28 +224,40 @@ function renderActiveVideoCall() {
 }
 
 async function startVideoCall() {
-  if (!state.currentId) return;
-  if (!confirm("North 实时视频通话会上传身份参考图或 Face URL，并可能按时长产生费用。确认开始？")) return;
-  await prepareUserMedia();
-  const call = await api(`/api/avatars/${state.currentId}/calls`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "video", provider: "north", user_camera_enabled: true, confirm_billable_call: true }),
-  });
-  state.videoCall = call;
-  $("#videoCallStatus").textContent = "实时视频通话已创建，North/LiveKit 房间已返回。";
-  renderActiveVideoCall();
+  if (!state.currentId || state.videoCallStarting || state.videoCall) return;
+  if (!confirm(ui("视频通话会向 North/LiveKit 发送身份参考图或 Face URL，以及你允许开启的摄像头和麦克风内容，并可能按时长收费。确认开始？", "Video calls send the identity reference or Face URL and enabled camera/microphone streams to North/LiveKit, and may incur time-based charges. Start?"))) return;
+  const avatarId = state.currentId;
+  let call = null;
+  state.videoCallStarting = true;
   try {
+    await prepareUserMedia();
+    call = await api(`/api/avatars/${avatarId}/calls`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "video", provider: "north", user_camera_enabled: state.callCameraEnabled, confirm_billable_call: true }),
+    });
+    state.videoCall = call;
+    $("#videoCallStatus").textContent = "实时视频通话已创建，North/LiveKit 房间已返回。";
+    renderActiveVideoCall();
     await connectNorthLiveKit(call.video_call?.livekit);
     $("#videoCallControls").classList.remove("hidden");
+    toast("North 实时视频通话已创建");
   } catch (error) {
-    setLiveKitStatus(error.message || "LiveKit 连接失败，正在结束计费会话", true);
-    try { await api(`/api/avatars/${state.currentId}/calls/${call.id}/end`, { method: "POST" }); } catch (_) {}
+    // Release local devices immediately, even if the remote cleanup request stalls.
     disconnectNorthLiveKit();
     state.videoCall = null;
+    $("#videoCallStatus").textContent = ui("通话未能开始，摄像头和麦克风已关闭。", "Call could not start. Camera and microphone have been stopped.");
+    if (call?.id) {
+      try {
+        await api(`/api/avatars/${avatarId}/calls/${call.id}/end`, { method: "POST" });
+      } catch (_) {
+        $("#videoCallStatus").textContent = ui("本机摄像头和麦克风已关闭，但远程会话释放失败。请到服务商处检查会话与费用。", "Local camera and microphone are stopped, but remote session cleanup failed. Check the session and billing with your provider.");
+      }
+    }
     throw error;
+  } finally {
+    state.videoCallStarting = false;
   }
-  toast("North 实时视频通话已创建");
 }
 
 async function sendVideoTurn() {
@@ -279,6 +291,8 @@ async function sendVideoTurn() {
 function listenVideoTurn() {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Recognition) throw new Error("当前浏览器不支持语音识别，请直接输入文字");
+  if (!confirm(ui("此功能使用浏览器自带语音识别，不使用你在本系统配置的语音 API Key。浏览器可能把麦克风音频发送到其在线识别服务，不能保证离线处理。是否继续？也可以取消并输入文字。", "This uses your browser's speech recognition, not the voice API key configured in this app. The browser may send microphone audio to its online recognition service; offline processing is not guaranteed. Continue, or cancel and type instead?"))) return;
+  try { state.speechRecognition?.abort?.(); } catch (_) {}
   try { state.currentSpeechSource?.stop?.(); } catch (_) {}
   const recognition = new Recognition();
   recognition.lang = state.current?.avatar_primary_language === "en-US" ? "en-US" : "zh-CN";

@@ -41,3 +41,12 @@ def test_cannot_label_arm_build_as_intel(monkeypatch):
     monkeypatch.setattr(sys, 'argv', ['package_release.py', '--version', 'test', '--arch', 'x64'])
     with pytest.raises(SystemExit, match='architecture mismatch'):
         package_release.main()
+
+
+def test_release_version_matches_embedded_application():
+    from openavatar import __version__
+    from scripts.check_release_version import validate_version
+    validate_version('v' + __version__)
+    validate_version('preview')
+    with pytest.raises(ValueError, match='does not match'):
+        validate_version('v0.0.0-wrong-version')

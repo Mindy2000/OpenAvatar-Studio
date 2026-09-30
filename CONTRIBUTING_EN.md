@@ -13,7 +13,7 @@ python3 -m venv .venv
 .venv/bin/python -m pytest -q
 .venv/bin/ruff check openavatar tests scripts --select E9,F63,F7,F82
 .venv/bin/python scripts/run_ui_checks.py
-.venv/bin/pip-audit -r requirements.txt
+.venv/bin/pip-audit -r requirements.txt -r requirements-dev.txt -r requirements-packaging.txt
 ```
 
 On Windows replace `.venv/bin/` with `.venv\Scripts\`; use `python` to create the environment if appropriate. UI checks create their own temporary data/server and remove test avatars afterward. They do not need your personal database. Pytest also isolates its data and uses a fresh in-memory credential store for each test, without reading or changing the OS keyring. Test credentials are discarded afterward.

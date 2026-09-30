@@ -6,13 +6,13 @@
 
 OpenAvatar Studio 是一个本地运行的数字人创建与管理工具。你可以用本人或明确授权的资料，或原创虚构设定，构建人格、记忆、声音、视觉身份和可编辑的世界，并连接自己的模型服务进行互动。
 
-当前版本为 **0.1.0 发布候选**，适合本机体验和开发。源码不包含演示人物、个人数据库、API Key 或本地模型权重；首次使用从空人物列表开始。云端功能需要自己的服务账号，可能产生费用。
+当前版本为 **0.1.0-rc.3 发布候选**，适合本机体验和开发。源码不包含演示人物、个人数据库、API Key 或本地模型权重；首次使用从空人物列表开始。云端功能需要自己的服务账号，可能产生费用。
 
 ## 桌面版下载
 
 按设备下载 ZIP 并完整解压。桌面包已包含 Python，无需另外安装。当前为未正式签名的测试版。
 
-[Windows x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-windows-x64.zip) · [Mac Apple silicon](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-macos-arm64.zip) · [Mac Intel](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-macos-x64.zip) · [Linux x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-linux-x64.zip)
+[进入版本下载页](https://github.com/Mindy2000/OpenAvatar-Studio/releases)：提供 Windows x64、Mac Apple 芯片、Mac Intel、Linux x64。选择最新已公开版本及对应设备的 ZIP；源码版本可能领先于当前可下载的安装包。
 
 ## 源码启动
 

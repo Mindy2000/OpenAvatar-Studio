@@ -19,6 +19,9 @@ from pathlib import Path
 from websockets.asyncio.client import connect
 
 ROOT = Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(ROOT))
+from openavatar import __version__
 
 
 async def check_call(base: str, avatar_id: str) -> None:
@@ -83,7 +86,7 @@ def main() -> None:
                     if process.poll() is not None:
                         raise RuntimeError(f"Desktop exited with {process.returncode}; see {log_path}")
                     try:
-                        json.loads(request("/api/health"))
+                        assert json.loads(request("/api/health"))["version"] == __version__
                         break
                     except (OSError, urllib.error.URLError):
                         if time.monotonic() >= deadline:

@@ -51,7 +51,7 @@ def main() -> int:
         shutil.copytree(notices, staging / "THIRD_PARTY_LICENSES")
         shutil.copyfile(ROOT / "LICENSE", staging / "LICENSE")
         (staging / "INSTALL.txt").write_text(
-            "OpenAvatar Studio - desktop preview\n\n"
+            f"OpenAvatar Studio {args.version} - desktop preview\n\n"
             "Extract the whole archive before launching. Keep all bundled files together.\n"
             "macOS: open OpenAvatar Studio.app. Windows: open OpenAvatar Studio/OpenAvatar Studio.exe.\n"
             "Linux: run OpenAvatar Studio/OpenAvatar Studio. Python is bundled.\n"

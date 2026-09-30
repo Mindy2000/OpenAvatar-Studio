@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 私密安全报告 / Private vulnerability report
+    url: https://github.com/Mindy2000/OpenAvatar-Studio/security/advisories/new
+    about: 安全漏洞请私下报告，不要发公开 Issue / Report vulnerabilities privately, not in public issues.
+  - name: 使用文档 / User guide
+    url: https://github.com/Mindy2000/OpenAvatar-Studio/blob/main/docs/GUIDE.md
+    about: 安装、模型配置、隐私和常见问题；页面提供 English 入口 / Installation, providers, privacy and troubleshooting; English link available.

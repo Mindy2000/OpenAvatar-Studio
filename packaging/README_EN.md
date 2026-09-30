@@ -24,9 +24,9 @@ Desktop data belongs in the OS application-data directory or `OPENAVATAR_DATA_DI
 
 - `quality.yml`: compilation, critical lint, automated tests, browser/WebSocket checks, and dependency audit for PRs and main/master pushes.
 - `build-desktop.yml`: manual runs and `v*` tags build on native macOS, Windows, and Linux runners and upload Actions artifacts.
-- Manual runs only produce artifacts for review. Pushing a `v*` tag additionally creates/updates a **draft Release** and uploads archives/checksums. Rerunning a tag replaces matching files.
+- Manual runs only produce review artifacts. Pushing a new `v*` tag creates a draft Release after all platform checks succeed. Existing releases, including drafts, are left unchanged; reruns do not replace their files. Use a new version for corrected builds.
 
-Tag pushes create release drafts: finish the [checklist](RELEASE_CHECKLIST_EN.md) and approve the release first. A configured matrix does not prove native-platform acceptance.
+Set the application version in `openavatar/__init__.py` first and push the matching `v<version>` tag. After the checks produce a draft, review its files and [checklist](RELEASE_CHECKLIST_EN.md), then publish it. A configured matrix does not prove native-platform acceptance.
 
 ## Clean release sources
 

@@ -93,6 +93,8 @@ Async video can use MiniMax, OpenRouter, or Aliyun WAN. First/multiple/last refe
 
 Realtime video uses North/Atlas. Configure a key and a canonical/approved image or HTTPS Face URL, then confirm the call. The browser loads LiveKit from a CDN, joins a remote room, and can publish cloned TTS audio to drive lip sync. Hangup requests session release; if the network fails, check remote session state and billing with the provider.
 
+The video-call microphone input button uses browser speech recognition, independently of your configured voice API key. It asks for confirmation before starting because the browser may use an online recognition service. Review the transcript before sending; if unsupported or unwanted, type instead. This is separate from the unfinished binary-audio ASR path in the application WebSocket gateway.
+
 ## Packages, backups, and deletion
 
 Exports use v3; imports accept v1/v2/v3. The UI separately controls conversations, audio, images, video, and call history. Inspect locally and confirm material rights before importing. Credential fields are not transferred; provider-bound assets may require rebinding. Packages are not full database backups and do not preserve every timeline branch. See the [protocol](OPENAVATAR_PACKAGE_EN.md).

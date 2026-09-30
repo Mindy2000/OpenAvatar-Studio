@@ -6,13 +6,13 @@
 
 OpenAvatar Studio is a locally running avatar creation and management tool. Build persona, memory, voice, visual identity, and editable worlds from your own or explicitly authorized materials, or from original fictional settings. Connect your own model services to interact with avatars.
 
-The current version is **0.1.0 release candidate**, intended for local evaluation and development. The source contains no demo avatars, personal databases, API keys, or local model weights. A fresh installation starts with an empty avatar list. Cloud features require your own accounts and may incur costs.
+The current version is **0.1.0-rc.3 release candidate**, intended for local evaluation and development. The source contains no demo avatars, personal databases, API keys, or local model weights. A fresh installation starts with an empty avatar list. Cloud features require your own accounts and may incur costs.
 
 ## Desktop downloads
 
 Download and fully extract the ZIP for your device. Python is included; no separate Python installation is needed. These are unsigned preview builds.
 
-[Windows x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-windows-x64.zip) · [Mac Apple silicon](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-macos-arm64.zip) · [Mac Intel](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-macos-x64.zip) · [Linux x64](https://github.com/Mindy2000/OpenAvatar-Studio/releases/download/v0.1.0-rc.2/OpenAvatar-Studio-v0.1.0-rc.2-linux-x64.zip)
+[Download released builds](https://github.com/Mindy2000/OpenAvatar-Studio/releases) — Windows x64, Mac Apple silicon, Mac Intel and Linux x64. Select the latest published release, then the ZIP for your device. A source checkout can be newer than the available binaries.
 
 ## Run from source
 

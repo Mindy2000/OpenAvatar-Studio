@@ -30,4 +30,4 @@ jobs:
       - name: Browser and WebSocket checks
         run: python scripts/run_ui_checks.py
       - name: Dependency audit
-        run: pip-audit -r requirements.txt
+        run: pip-audit -r requirements.txt -r requirements-dev.txt -r requirements-packaging.txt

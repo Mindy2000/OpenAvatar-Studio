@@ -26,6 +26,7 @@ Do not put keys into connection URLs, advanced JSON, metadata, character setting
 - A successful connection test does not prove every capability works. Some media-only tests make no generation request, and new routes do not uniformly require a recent successful test.
 - Daily/monthly budgets compare estimated local usage. Some providers record zero without custom estimates, so these are not hard caps on real bills.
 - North/Atlas calls send identity images or Face URLs, room metadata, and realtime tracks. The frontend loads LiveKit from a CDN. Hangup requests session release; failures may require action with the provider.
+- **Browser speech input:** the microphone-to-text button in video calls uses browser SpeechRecognition, independently of configured voice providers and API keys. After explicit confirmation, the browser may send microphone audio to its own online recognition service. Availability, processing location and retention depend on the browser; offline recognition is not guaranteed. Cancel and type instead to avoid this path.
 - Dependency installation needs network access. Offline operation thereafter depends on actual model, OCR, media, and SDK configuration.
 
 ## Packages and deletion
@@ -36,7 +37,7 @@ Packages migrate avatar content, do not copy the OS credential store, and are no
 
 Deleting an avatar removes current records and its asset directory. It does **not** remove previous exports, database backups, copies in other directories, provider-held materials, or service credentials in the OS credential store. Purging an archived timeline creates a backup first, which may retain old content.
 
-The UI's “permanently delete all local materials” prompt should be read with these boundaries; it does not mean all copies disappear. Review backups, exports, and provider retention when complete deletion is needed.
+Deletion confirmation lists what remains. For complete removal, separately review backups, exports, other data directories and provider retention policies.
 
 ## Logs and materials
 
