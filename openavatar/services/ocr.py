@@ -128,7 +128,7 @@ def validate_ocr_payload(payload: dict[str, Any], connection_id: str = "") -> di
     }
     if connection_type == "local_command":
         try:
-            parts = shlex.split(row["command_template"])
+            parts = split_local_command(row["command_template"])
         except ValueError as exc:
             raise ProviderError("本地命令模板格式不正确") from exc
         if not parts or "{image}" not in parts:
@@ -208,8 +208,18 @@ def _run_tesseract(path: Path) -> tuple[str, str]:
         return text, "Tesseract 本地 OCR 已完成" if text else "Tesseract 未识别到文字"
 
 
+def split_local_command(template: str) -> list[str]:
+    # Windows paths use backslashes; POSIX shlex would silently remove them.
+    lexer = shlex.shlex(template, posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    if platform.system() == "Windows":
+        lexer.escape = ""
+    return list(lexer)
+
+
 def _run_local_command(template: str, path: Path) -> tuple[str, str]:
-    command = [str(path) if part == "{image}" else part for part in shlex.split(template)]
+    command = [str(path) if part == "{image}" else part for part in split_local_command(template)]
     completed = subprocess.run(command, capture_output=True, text=True, timeout=90, check=False)
     text = completed.stdout.strip()
     if completed.returncode != 0 and not text:

@@ -448,7 +448,7 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
             path = Path(raw)
             if path.is_absolute() or ".." in path.parts:
                 return ""
-            return str(Path("avatars") / new_id / path)
+            return (Path("avatars") / new_id / path).as_posix()
 
         with db.transaction() as connection:
             connection.execute(

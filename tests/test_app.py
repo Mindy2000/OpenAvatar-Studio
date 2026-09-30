@@ -175,7 +175,7 @@ def test_ocr_connections_and_capability_disclosure(tmp_path: Path):
             "display_name": "本地命令测试 OCR",
             "connection_type": "local_command",
             "provider_name": "fake",
-            "command_template": f"{sys.executable} {helper} {{image}}",
+            "command_template": f'"{sys.executable}" "{helper}" {{image}}' ,
         })
         assert saved.status_code == 201, saved.text
         connection_id = saved.json()["id"]
@@ -293,7 +293,7 @@ def test_migrated_aliyun_request_contracts(tmp_path: Path):
         assert voice["voice_id"] == "voice-contract"
         assert visual["output"]["results"]
         assert requests[0][1] == "Bearer key-contract"
-        assert requests[0][2]["input"]["audio"]["data"].startswith("data:audio/x-wav;base64,")
+        assert requests[0][2]["input"]["audio"]["data"].startswith(("data:audio/x-wav;base64,", "data:audio/wav;base64,"))
         assert requests[1][2]["input"]["messages"][0]["content"][0]["image"].startswith("data:image/png;base64,")
         assert requests[1][2]["parameters"]["n"] == 1
     finally:

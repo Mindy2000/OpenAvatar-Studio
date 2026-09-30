@@ -38,3 +38,5 @@ Rebuild from clean sources instead of reusing old packages. Inspect archive cont
 Launch on each target platform and verify pages, data location, credential save/delete, import/export, shutdown, certificates, and OS credential services. Use test accounts for network features; mock tests do not establish real provider availability.
 
 Packages currently lack formal signing. Release notes should state OS/architecture, signing status, external dependencies, and actual validation scope. Do not promise zero-configuration operation on every system. Source publication and a production desktop release have separate acceptance requirements.
+
+The build runs `scripts/check_desktop_bundle.py` against the frozen application with disposable data, checking the homepage, empty avatar list, templates, avatar creation, export, and WebSocket. Linux uses a virtual display for the desktop window. These checks do not validate paid cloud services, code signing, or compatibility with every device.
