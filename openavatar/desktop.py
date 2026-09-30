@@ -5,6 +5,7 @@ import json
 import urllib.request
 import os
 import socket
+import sqlite3
 import sys
 import threading
 import time
@@ -89,8 +90,23 @@ def wait_until_ready(runtime: DesktopRuntime, timeout: float = 12.0, *, server=N
     return False
 
 
+def desktop_language(data_dir: Path) -> str:
+    """Read the saved interface preference without creating or modifying a database."""
+    try:
+        uri = (data_dir / "openavatar.sqlite").resolve().as_uri() + "?mode=ro"
+        with sqlite3.connect(uri, uri=True, timeout=0.1) as connection:
+            row = connection.execute("SELECT value_json FROM app_settings WHERE key='interface_language'").fetchone()
+        return "en-US" if row and json.loads(row[0]) == "en-US" else "zh-CN"
+    except (OSError, sqlite3.Error, ValueError):
+        return "zh-CN"
+
+
 def show_startup_error() -> None:
-    message = "OpenAvatar 启动失败。请检查数据目录是否可写、端口是否可用，然后重试。 / OpenAvatar failed to start. Check data-directory permissions and available ports, then retry."
+    message = (
+        "OpenAvatar failed to start. Check data-directory permissions and available ports, then retry."
+        if desktop_language(default_desktop_data_dir()) == "en-US"
+        else "OpenAvatar 启动失败。请检查数据目录是否可写、端口是否可用，然后重试。"
+    )
     if sys.stderr is not None:
         print(message, file=sys.stderr)
     try:
@@ -114,12 +130,17 @@ def open_browser(url: str) -> None:
 
 
 def run_tk_window(runtime: DesktopRuntime, server: uvicorn.Server) -> int:
+    language = desktop_language(runtime.data_dir)
+
+    def ui(zh: str, en: str) -> str:
+        return en if language == "en-US" else zh
+
     try:
         import tkinter as tk
         from tkinter import messagebox
     except Exception:
-        print(f"{APP_NAME} 已启动：{runtime.url}")
-        print("关闭这个窗口或按 Ctrl+C 停止服务。")
+        print(ui(f"{APP_NAME} 已启动：{runtime.url}", f"{APP_NAME} started: {runtime.url}"))
+        print(ui("关闭这个窗口或按 Ctrl+C 停止服务。", "Close this window or press Ctrl+C to stop the service."))
         try:
             while not server.should_exit:
                 time.sleep(1)
@@ -133,27 +154,50 @@ def run_tk_window(runtime: DesktopRuntime, server: uvicorn.Server) -> int:
     root.minsize(520, 320)
     root.configure(bg="#f7f4ee")
 
+    localized_widgets: list[tuple[Any, str, str]] = []
+
     def label(text: str, size: int = 13, bold: bool = False) -> Any:
         font = ("Arial", size, "bold" if bold else "normal")
         return tk.Label(root, text=text, bg="#f7f4ee", fg="#23211f", font=font, wraplength=480, justify="left")
 
     label(f"{APP_NAME} {__version__}", 24, True).pack(anchor="w", padx=28, pady=(26, 6))
-    label("本地优先数字人工作室已经在这台电脑上运行。", 13).pack(anchor="w", padx=28)
-    status = label(f"访问地址：{runtime.url}\n数据目录：{runtime.data_dir}", 11)
-    status.pack(anchor="w", padx=28, pady=(18, 10))
+    def translated_label(zh: str, en: str, size: int = 13) -> Any:
+        widget = label(ui(zh, en), size)
+        localized_widgets.append((widget, zh, en))
+        return widget
 
+    translated_label("本地优先数字人工作室已经在这台电脑上运行。", "Your local-first avatar studio is running on this computer.").pack(anchor="w", padx=28)
+    status = translated_label(f"访问地址：{runtime.url}\n数据目录：{runtime.data_dir}", f"Address: {runtime.url}\nData directory: {runtime.data_dir}", 11)
+    status.pack(anchor="w", padx=28, pady=(18, 10))
     frame = tk.Frame(root, bg="#f7f4ee")
     frame.pack(anchor="w", padx=28, pady=8)
+    for index, (zh, en, target) in enumerate([
+        ("打开 OpenAvatar", "Open OpenAvatar", runtime.url),
+        ("能力状态", "Capabilities", f"{runtime.url}/#capabilities"),
+        ("诊断中心", "Diagnostics", f"{runtime.url}/#diagnostics"),
+        ("数据目录", "Data Directory", str(runtime.data_dir)),
+    ]):
+        button = tk.Button(frame, text=ui(zh, en), command=lambda url=target: open_browser(url), width=18)
+        button.grid(row=index // 2, column=index % 2, padx=(0, 10), pady=6)
+        localized_widgets.append((button, zh, en))
+    translated_label(
+        "此内测版未签名，系统可能显示安全提示。API Key 保存在系统凭据库。",
+        "This preview is unsigned and may trigger system security prompts. API keys stay in the system credential store.", 10,
+    ).pack(anchor="w", padx=28, pady=(14, 0))
 
-    tk.Button(frame, text="打开 OpenAvatar", command=lambda: open_browser(runtime.url), width=18).grid(row=0, column=0, padx=(0, 10), pady=6)
-    tk.Button(frame, text="能力状态", command=lambda: open_browser(f"{runtime.url}/#capabilities"), width=18).grid(row=0, column=1, padx=(0, 10), pady=6)
-    tk.Button(frame, text="诊断中心", command=lambda: open_browser(f"{runtime.url}/#diagnostics"), width=18).grid(row=1, column=0, padx=(0, 10), pady=6)
-    tk.Button(frame, text="数据目录", command=lambda: open_browser(str(runtime.data_dir)), width=18).grid(row=1, column=1, padx=(0, 10), pady=6)
+    def refresh_language() -> None:
+        nonlocal language
+        selected = desktop_language(runtime.data_dir)
+        if selected != language:
+            language = selected
+            for widget, zh, en in localized_widgets:
+                widget.configure(text=ui(zh, en))
+        root.after(1000, refresh_language)
 
-    label("未签名内测版可能被系统提示风险；这是免费分发阶段的正常现象。API Key 仍保存到系统凭据库。", 10).pack(anchor="w", padx=28, pady=(14, 0))
+    root.after(1000, refresh_language)
 
     def close() -> None:
-        if messagebox.askokcancel("退出", "关闭 OpenAvatar Studio 本地服务？"):
+        if messagebox.askokcancel(ui("退出", "Quit"), ui("关闭 OpenAvatar Studio 本地服务？", "Stop the OpenAvatar Studio local service?")):
             server.should_exit = True
             root.destroy()
 

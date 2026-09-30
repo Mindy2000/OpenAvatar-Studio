@@ -26,7 +26,7 @@ FastAPI serves local HTTP APIs, streaming chat, WebSockets, and a static fronten
 | `runtime.py`, `events.py` | Run IDs, cancellation, metrics, leases, Supervisor, events, and Outbox |
 | `static/core.js`, `profile.js`, `settings.js` | Page foundations, studio, and settings |
 | `static/imports.js`, `chat.js`, `video-call.js`, `app.js` | Imports, chat, LiveKit, and event wiring |
-| `i18n/` | Chinese/English resources; some dynamic text remains in scripts |
+| `i18n/` | Chinese/English UI catalogs for static text, dynamic notices, and system messages; template parameters preserve user content |
 
 ## Data and timelines
 

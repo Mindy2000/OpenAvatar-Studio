@@ -16,12 +16,12 @@ async function loadVideoCallStatus() {
   state.videoCallStatus = status;
   const available = status.available;
   $("#videoCallStatus").textContent = available
-    ? "North/Atlas 已就绪。开始前会再次确认费用和数据传输。"
-    : status.reason || "尚未配置实时视频通话";
+    ? tr("North/Atlas 已就绪。开始前会再次确认费用和数据传输。")
+    : systemText(status.reason) || tr("尚未配置实时视频通话");
   $("#videoCallPanel").classList.toggle("ready", Boolean(available));
   $("#videoCallDetails").innerHTML = `<span>${escapeHtml(status.provider)} · ${escapeHtml(status.transport || "livekit")}</span>
-    <span>${status.hasCanonicalOrApprovedFace ? "已有 canonical/approved 身份图" : status.hasFaceUrl ? "使用 North Face URL" : "缺少身份参考图"}</span>
-    <span>${status.settings?.scene_background_enabled ? "背景开启" : "背景关闭"} · ${status.settings?.camera_flip_enabled ? "翻转开启" : "翻转关闭"}</span>`;
+    <span>${status.hasCanonicalOrApprovedFace ? tr("已有 canonical/approved 身份图") : status.hasFaceUrl ? tr("使用 North Face URL") : tr("缺少身份参考图")}</span>
+    <span>${status.settings?.scene_background_enabled ? tr("背景开启") : tr("背景关闭")} · ${status.settings?.camera_flip_enabled ? tr("翻转开启") : tr("翻转关闭")}</span>`;
 }
 
 async function loadLiveKitClient() {
@@ -40,7 +40,7 @@ async function loadLiveKitClient() {
     const client = window.LivekitClient || window.LiveKitClient || window.LiveKit;
     if (client) return client;
   } catch (_) {}
-  throw new Error("LiveKit SDK 加载失败，请检查网络或桌面应用的安全设置");
+  throw new Error(tr("LiveKit SDK 加载失败，请检查网络或桌面应用的安全设置"));
 }
 
 function liveKitStage() {
@@ -97,7 +97,7 @@ async function ensureLiveKitAudioTrack() {
     silence.start();
   }
   const track = dest.stream.getAudioTracks()[0];
-  if (!track) throw new Error("没有可发布的 LiveKit 音频轨道");
+  if (!track) throw new Error(tr("没有可发布的 LiveKit 音频轨道"));
   await state.livekitRoom.localParticipant.publishTrack(track, {
     name: "openavatar-tts",
     source: client.Track?.Source?.Microphone || "microphone",
@@ -105,7 +105,7 @@ async function ensureLiveKitAudioTrack() {
   state.livekitAudioDest = dest;
   state.livekitSilenceSource = silence;
   state.livekitPublishedTrack = track;
-  setLiveKitStatus("LiveKit 已连接，复刻语音会同步推入头像音轨");
+  setLiveKitStatus(tr("LiveKit 已连接，复刻语音会同步推入头像音轨"));
   })();
   try { await state.livekitAudioPromise; } finally { state.livekitAudioPromise = null; }
 }
@@ -123,8 +123,8 @@ async function prepareUserMedia() {
   const microphoneButton = $("[data-action='toggle-call-microphone']");
   cameraButton?.setAttribute("aria-pressed", String(state.callCameraEnabled));
   microphoneButton?.setAttribute("aria-pressed", String(state.callMicrophoneEnabled));
-  if (cameraButton) cameraButton.textContent = state.callCameraEnabled ? "关闭摄像头" : "开启摄像头";
-  if (microphoneButton) microphoneButton.textContent = state.callMicrophoneEnabled ? "静音" : "取消静音";
+  if (cameraButton) cameraButton.textContent = state.callCameraEnabled ? tr("关闭摄像头") : tr("开启摄像头");
+  if (microphoneButton) microphoneButton.textContent = state.callMicrophoneEnabled ? tr("静音") : tr("取消静音");
   const preview = $("#localCameraPreview");
   if (preview && state.userMedia?.getVideoTracks().length) {
     preview.srcObject = state.userMedia;
@@ -145,21 +145,21 @@ async function publishUserMedia() {
 }
 
 async function connectNorthLiveKit(livekit) {
-  if (!livekit?.url || !livekit?.token) throw new Error("North 没有返回完整的 LiveKit URL/token");
+  if (!livekit?.url || !livekit?.token) throw new Error(tr("North 没有返回完整的 LiveKit URL/token"));
   if (state.livekitRoom) return;
-  setLiveKitStatus("正在连接 LiveKit 房间…");
+  setLiveKitStatus(tr("正在连接 LiveKit 房间…"));
   const client = await loadLiveKitClient();
   const Room = client.Room;
   const RoomEvent = client.RoomEvent || {};
   const room = new Room({ adaptiveStream: true, dynacast: true });
   room.on?.(RoomEvent.TrackSubscribed || "trackSubscribed", track => {
     attachLiveKitTrack(track);
-    setLiveKitStatus(track?.kind === "video" ? "实时头像画面已接入" : "LiveKit 音频轨道已接入");
+    setLiveKitStatus(track?.kind === "video" ? tr("实时头像画面已接入") : tr("LiveKit 音频轨道已接入"));
   });
   room.on?.(RoomEvent.TrackUnsubscribed || "trackUnsubscribed", track => {
     if ((track?.kind || "") === "video") liveKitStage()?.querySelectorAll("video[data-livekit-track='video']").forEach(node => node.remove());
   });
-  room.on?.(RoomEvent.Disconnected || "disconnected", () => setLiveKitStatus("LiveKit 连接已断开", true));
+  room.on?.(RoomEvent.Disconnected || "disconnected", () => setLiveKitStatus(tr("LiveKit 连接已断开"), true));
   await room.connect(livekit.url, livekit.token, { autoSubscribe: true });
   state.livekit = livekit;
   state.livekitRoom = room;
@@ -217,7 +217,7 @@ function renderActiveVideoCall() {
   const call = state.videoCall;
   if (!call?.video_call) return;
   const video = call.video_call;
-  $("#videoCallDetails").innerHTML = `<span>North session: ${escapeHtml(video.northSessionId || "")}</span>
+  $("#videoCallDetails").innerHTML = tr`<span>North session: ${escapeHtml(video.northSessionId || "")}</span>
     <span>LiveKit: ${escapeHtml(video.livekit?.room || "room pending")}</span>
     <span>计费：${Number(video.budget?.pricePerSecond || 0).toFixed(5)} / 秒</span>
     <small id="videoLiveKitStatus">正在等待 LiveKit 连接…</small>`;
@@ -237,11 +237,11 @@ async function startVideoCall() {
       body: JSON.stringify({ mode: "video", provider: "north", user_camera_enabled: state.callCameraEnabled, confirm_billable_call: true }),
     });
     state.videoCall = call;
-    $("#videoCallStatus").textContent = "实时视频通话已创建，North/LiveKit 房间已返回。";
+    $("#videoCallStatus").textContent = tr("实时视频通话已创建，North/LiveKit 房间已返回。");
     renderActiveVideoCall();
     await connectNorthLiveKit(call.video_call?.livekit);
     $("#videoCallControls").classList.remove("hidden");
-    toast("North 实时视频通话已创建");
+    toast(tr("North 实时视频通话已创建"));
   } catch (error) {
     // Release local devices immediately, even if the remote cleanup request stalls.
     disconnectNorthLiveKit();
@@ -265,7 +265,7 @@ async function sendVideoTurn() {
   const message = input.value.trim();
   if (!message || !state.videoCall?.id) return;
   input.value = "";
-  $("#videoTurnStatus").textContent = "数字人正在理解并回复…";
+  $("#videoTurnStatus").textContent = tr("数字人正在理解并回复…");
   const started = performance.now();
   const result = await api(`/api/avatars/${state.currentId}/chat`, {
     method: "POST",
@@ -285,12 +285,12 @@ async function sendVideoTurn() {
     body: JSON.stringify({ text: result.reply, confirm_billable_call: true }),
   });
   if (response.ok) await playSpeechBlob(await response.blob());
-  else $("#videoTurnStatus").textContent = `${result.reply}（当前没有可用的复刻声音，已保留文字回复）`;
+  else $("#videoTurnStatus").textContent = tr`${result.reply}（当前没有可用的复刻声音，已保留文字回复）`;
 }
 
 function listenVideoTurn() {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) throw new Error("当前浏览器不支持语音识别，请直接输入文字");
+  if (!Recognition) throw new Error(tr("当前浏览器不支持语音识别，请直接输入文字"));
   if (!confirm(ui("此功能使用浏览器自带语音识别，不使用你在本系统配置的语音 API Key。浏览器可能把麦克风音频发送到其在线识别服务，不能保证离线处理。是否继续？也可以取消并输入文字。", "This uses your browser's speech recognition, not the voice API key configured in this app. The browser may send microphone audio to its online recognition service; offline processing is not guaranteed. Continue, or cancel and type instead?"))) return;
   try { state.speechRecognition?.abort?.(); } catch (_) {}
   try { state.currentSpeechSource?.stop?.(); } catch (_) {}
@@ -301,11 +301,11 @@ function listenVideoTurn() {
   recognition.onresult = event => {
     $("#videoTranscriptInput").value = [...event.results].map(result => result[0].transcript).join("");
   };
-  recognition.onend = () => { $("#videoTurnStatus").textContent = "语音识别结束，请检查文字后发送。"; };
-  recognition.onerror = event => { $("#videoTurnStatus").textContent = `语音识别不可用：${event.error}`; };
+  recognition.onend = () => { $("#videoTurnStatus").textContent = tr("语音识别结束，请检查文字后发送。"); };
+  recognition.onerror = event => { $("#videoTurnStatus").textContent = tr`语音识别不可用：${event.error}`; };
   state.speechRecognition = recognition;
   recognition.start();
-  $("#videoTurnStatus").textContent = "正在听，请自然说话…";
+  $("#videoTurnStatus").textContent = tr("正在听，请自然说话…");
 }
 
 

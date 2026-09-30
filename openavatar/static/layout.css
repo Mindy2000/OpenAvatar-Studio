@@ -13,7 +13,7 @@
 .empty-home b{font-size:22px;color:var(--ink)}
 .empty-home p{height:auto;margin:0 0 4px;max-width:560px;line-height:1.6}
 .empty-home div{display:flex;gap:10px;flex-wrap:wrap}
-.settings-tabs{display:flex;gap:6px;padding:5px;border:1px solid var(--line);border-radius:8px;background:#f8f5ef;margin:8px 0 18px;position:sticky;top:0;z-index:2}
+.settings-tabs{flex-shrink:0;display:flex;gap:6px;padding:5px;border:1px solid var(--line);border-radius:8px;background:#f8f5ef;margin:8px 0 18px;position:sticky;top:0;z-index:2}
 .settings-tabs button{flex:1;background:transparent;border-radius:6px;padding:11px 12px;color:var(--muted);font-size:13px}
 .settings-tabs button.active{background:#fff;color:var(--ink);box-shadow:0 2px 8px rgba(61,48,37,.08)}
 .settings-section{display:none;gap:14px}
@@ -41,7 +41,7 @@
   .hero-actions{grid-template-columns:1fr}
   .route-card{min-height:auto}
   .settings-tabs{position:static;overflow:auto}
-  .settings-tabs button{min-width:110px;white-space:nowrap}
+  .settings-tabs button{flex:0 0 auto;min-width:110px;min-height:44px;white-space:nowrap}
   .security-note{flex-direction:column;gap:5px}
   #settingsDialog{width:96vw}
   #settingsDialog .dialog-card{padding:24px}

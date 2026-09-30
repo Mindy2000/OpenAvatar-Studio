@@ -7,9 +7,9 @@ async function streamChat(message, onEvent) {
     signal: controller.signal,
   });
   if (!response.ok) {
-    let detail = `请求失败（${response.status}）`;
+    let detail = tr`请求失败（${response.status}）`;
     try { detail = (await response.json()).detail || detail; } catch (_) {}
-    throw new Error(detail);
+    throw new Error(systemText(typeof detail === "string" ? detail : JSON.stringify(detail)));
   }
   const runId = response.headers.get("X-Run-Id") || "";
   state.activeChat = { controller, runId };
@@ -57,7 +57,7 @@ $("#chatForm").addEventListener("submit", async event => {
   const messageId = `stream-${Date.now()}`;
   list.insertAdjacentHTML(
     "beforeend",
-    `<div class="message user">${escapeHtml(message)}</div><div class="message assistant" id="${messageId}"><span data-stream-text>正在连接模型…</span><button type="button" class="ghost" data-action="cancel-chat">停止</button></div>`,
+    tr`<div class="message user">${escapeHtml(message)}</div><div class="message assistant" id="${messageId}"><span data-stream-text>正在连接模型…</span><button type="button" class="ghost" data-action="cancel-chat">停止</button></div>`,
   );
   list.scrollTop = list.scrollHeight;
   const node = $(`#${messageId}`);
@@ -71,9 +71,9 @@ $("#chatForm").addEventListener("submit", async event => {
         textNode.textContent = reply;
         list.scrollTop = list.scrollHeight;
       }
-      if (item.type === "error") throw new Error(item.error || "模型流式回复失败");
+      if (item.type === "error") throw new Error(systemText(item.error) || tr("模型流式回复失败"));
       if (item.type === "done") {
-        node.innerHTML = `<span>${escapeHtml(item.reply)}</span><button class="message-audio" data-action="speak-message" title="使用复刻声音播放">♫</button>`;
+        node.innerHTML = tr`<span>${escapeHtml(item.reply)}</span><button class="message-audio" data-action="speak-message" title="使用复刻声音播放">♫</button>`;
       }
     });
   } catch (error) {

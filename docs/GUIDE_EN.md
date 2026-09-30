@@ -41,6 +41,8 @@ The desktop launcher starts a local service and opens your browser; it is not an
 
 UI language and avatar output language are separate. Avatars support Chinese, English, mixed, and custom language choices. Regions include Mainland China, North America, Japan, Europe, and Custom. Region rules influence world runtime; they do not imply live weather or news access.
 
+Change the interface language in Global AI Settings to update pages, guided questions, buttons, dialogs, diagnostics, and task notices. The desktop launcher follows the saved preference too. Unsaved form entries are preserved. Avatar names, materials, chats, imported documents, and custom world content stay in their original language; configure the avatar language separately for English replies. Raw technical responses from external providers may remain in the provider’s language.
+
 ## Services and capability routing
 
 Settings contains service/capability routes, legacy model connections, OCR, and voice/visual/video settings. The new hub supports MiniMax, Aliyun, OpenRouter, OpenAI-compatible, local, and North/Atlas connections, with per-capability primary/fallback providers and models.

@@ -93,6 +93,10 @@ def main() -> None:
                             raise RuntimeError(f"Desktop did not become ready; see {log_path}")
                         time.sleep(0.5)
                 assert b"<html" in request("/").lower()
+                english = json.loads(request("/api/i18n/en-US"))["messages"]
+                assert english["literals"]["连接配置中心"] == "Connection Center"
+                assert english["system"]["数字人不存在"] == "Avatar not found"
+                assert json.loads(request("/api/i18n/zh-CN"))["messages"]["home.countUnit"] == "个项目"
                 assert json.loads(request("/api/avatars")) == []
                 assert json.loads(request("/api/templates/character"))["avatar_md"]
                 avatar = json.loads(request("/api/avatars", {"name": "Bundle check", "subject_kind": "fictional", "consent_confirmed": True}))

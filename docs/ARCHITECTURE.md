@@ -26,7 +26,7 @@ FastAPI 提供本机 HTTP API、流式聊天、WebSocket 和静态前端。桌�
 | `runtime.py`、`events.py` | 运行 ID、取消、指标、租约、后台 Supervisor、领域事件与 Outbox |
 | `static/core.js`、`profile.js`、`settings.js` | 页面基础、人物工作室和设置 |
 | `static/imports.js`、`chat.js`、`video-call.js`、`app.js` | 导入、聊天、LiveKit 与事件装配 |
-| `i18n/` | 中英文界面资源；部分动态文案仍在脚本中 |
+| `i18n/` | 中英文界面资源，包含静态文案、动态提示与系统返回信息；模板参数保留用户原文 |
 
 ## 数据与时间线
 

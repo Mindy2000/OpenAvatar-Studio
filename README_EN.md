@@ -6,7 +6,7 @@
 
 OpenAvatar Studio is a locally running avatar creation and management tool. Build persona, memory, voice, visual identity, and editable worlds from your own or explicitly authorized materials, or from original fictional settings. Connect your own model services to interact with avatars.
 
-The current version is **0.1.0-rc.3 release candidate**, intended for local evaluation and development. The source contains no demo avatars, personal databases, API keys, or local model weights. A fresh installation starts with an empty avatar list. Cloud features require your own accounts and may incur costs.
+The current version is **0.1.0-rc.4 release candidate**, intended for local evaluation and development. The source contains no demo avatars, personal databases, API keys, or local model weights. A fresh installation starts with an empty avatar list. Cloud features require your own accounts and may incur costs.
 
 ## Desktop downloads
 
@@ -35,7 +35,7 @@ The desktop launcher selects a free local port and opens a browser. Desktop and 
 - North/Atlas realtime video calls with LiveKit connectivity.
 - Visual approval, continuity asset sets, scene profiles, and video keyframe review.
 - Avatar package v3 import/export with v1/v2 compatibility and separate conversation, audio, image, video, and call-history controls.
-- Chinese/English UI resources, separate avatar language, and world-region settings.
+- Complete Chinese/English interface switching across settings, guided creation, dialogs, diagnostics, build status, and the desktop launcher, with separate avatar language and world-region settings.
 
 ## Data and current limits
 

@@ -77,7 +77,7 @@ def capability_report(db: Database, model_config: ProviderConfig, model_client: 
             "consent": bool(cloud_services.get("cloud_data_consent", False)),
         },
         {"key": "memory", "name": "长期记忆与检索", "status": "available", "running_at": "local", "provider": "SQLite 本地库", "sends": "不发送到外部服务", "cost": "免费", "consent": True},
-        {"key": "package", "name": "人物包导入导出", "status": "available", "running_at": "local", "provider": "OpenAvatar Package v2", "sends": "不上传；导入前本机预检", "cost": "免费", "consent": True},
+        {"key": "package", "name": "人物包导入导出", "status": "available", "running_at": "local", "provider": "OpenAvatar Package v3", "sends": "不上传；导入前本机预检", "cost": "免费", "consent": True},
         {"key": "proactive", "name": "主动联系", "status": "user_controlled", "running_at": "uses_chat_model", "provider": model_config.provider_name, "sends": "开启后会按当前对话模型的数据去向处理", "cost": "取决于当前模型连接", "consent": bool(model_config.cloud_data_consent)},
         {"key": "desktop", "name": "桌面应用与跨平台启动", "status": "packaging_ready", "running_at": "local", "provider": "Python Desktop Launcher + PyInstaller", "sends": "只启动本机服务，不上传数据", "cost": "免费工具链；未签名内测版可能有系统提示", "consent": True},
     ]

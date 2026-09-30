@@ -244,12 +244,12 @@ def question_map() -> dict[str, dict[str, str]]:
 
 def _avatar_context(db: Database, avatar_id: str) -> dict[str, Any]:
     row = db.one("SELECT * FROM avatars WHERE id=?", (avatar_id,)) or {}
-    return avatar_language_profile(row)
+    return {**avatar_language_profile(row), "interface_language": db.setting("interface_language", "zh-CN")}
 
 
 def _localized_item(item: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     copied = dict(item)
-    english = context.get("avatar_primary_language") == "en-US"
+    english = context.get("interface_language", "zh-CN") == "en-US"
     if english:
         category, title, prompt, description, module = ENGLISH_MODULE_COPY[item["key"]]
         copied.update(category=category, title=title, prompt=prompt, description=description, module=module)

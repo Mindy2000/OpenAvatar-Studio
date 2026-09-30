@@ -28,7 +28,7 @@ document.addEventListener("click", async event => {
     if (action === "complete-onboarding") {
       await api("/api/onboarding", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ completed: true }) });
       $("#onboardingDialog").close();
-      toast("新手向导已完成，之后可以从顶部再次打开");
+      toast(tr("新手向导已完成，之后可以从顶部再次打开"));
     }
     if (action === "open-diagnostics") await openDiagnostics();
     if (action === "dismiss-error") $("#errorTray").classList.add("hidden");
@@ -79,14 +79,14 @@ document.addEventListener("click", async event => {
       $("#packageInput").value = "";
     }
     if (action === "confirm-package-import") {
-      if (!state.pendingPackageFile) throw new Error("请先选择人物包文件");
+      if (!state.pendingPackageFile) throw new Error(tr("请先选择人物包文件"));
       const file = state.pendingPackageFile;
       const result = await api("/api/packages/import", { method: "POST", headers: { "Content-Type": "application/zip", "X-File-Name": encodeURIComponent(file.name), "X-Rights-Confirmed": "true" }, body: file });
       state.pendingPackageFile = null;
       $("#packageDialog").close();
       $("#packageInput").value = "";
       await loadAvatars();
-      toast(`已导入数字人：${result.name}`);
+      toast(tr`已导入数字人：${result.name}`);
       await openAvatar(result.id);
     }
     if (action === "new-real-avatar" || action === "new-avatar") { state.currentId = null; $("#identityForm").reset(); $("#uploadList").innerHTML = ""; setCreationMode("real"); showView("#wizardView"); goStep(1); }
@@ -111,26 +111,26 @@ document.addEventListener("click", async event => {
     if (action === "save-guided-answer") {
       const active = (state.guided?.questions || []).filter(row => row.enabled);
       const item = active[state.guidedIndex] || state.guided?.next_question;
-      if (!item) throw new Error("没有需要回答的问题");
+      if (!item) throw new Error(tr("没有需要回答的问题"));
       const answer = $("#guidedAnswer").value.trim();
-      if (!answer) throw new Error("请先写一点设定");
+      if (!answer) throw new Error(tr("请先写一点设定"));
       state.guided = await api(`/api/avatars/${state.currentId}/guided-builder/answers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question_key: item.key, answer }) });
       const nextIndex = state.guided.questions.filter(row => row.enabled).findIndex(row => !row.answered);
       state.guidedIndex = nextIndex >= 0 ? nextIndex : state.guidedIndex;
       renderGuidedBuilder();
-      toast("这一项已进入设定证据库");
+      toast(tr("这一项已进入设定证据库"));
     }
     if (action === "choose-ai") {
-      if (!state.currentId) throw new Error("请先创建人物档案");
+      if (!state.currentId) throw new Error(tr("请先创建人物档案"));
       state.current = await api(`/api/avatars/${state.currentId}`);
       const required = state.current.readiness?.checks || [];
       if (state.creationMode === "real") {
         const textReady = required.find(item => item.name === "文本人格素材")?.passed;
         const audioReady = required.find(item => item.name === "声音样本")?.passed;
-        if (!textReady || !audioReady) throw new Error("真实路线需要先确认文字/聊天内容，并上传至少一段声音样本。完成后才能选择 AI。");
+        if (!textReady || !audioReady) throw new Error(tr("真实路线需要先确认文字/聊天内容，并上传至少一段声音样本。完成后才能选择 AI。"));
       } else {
         const pendingSetting = state.current.imports?.some(item => item.category === "fictional" && item.status === "needs_review");
-        if (pendingSetting) throw new Error("请先预览并确认刚刚导入的设定文件。");
+        if (pendingSetting) throw new Error(tr("请先预览并确认刚刚导入的设定文件。"));
       }
       await loadModelConnections();
       goStep(3);
@@ -143,103 +143,103 @@ document.addEventListener("click", async event => {
       const result = await api(`/api/avatars/${state.currentId}/imports/${state.currentImport.id}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ avatar_speakers: avatarSpeakers, excluded_row_ids: excluded, apply_mode: $("#fictionalApplyMode").value }) });
       $("#reviewDialog").close();
       const status = $(`[data-upload-import="${state.currentImport.id}"] .upload-status`);
-      if (status) status.textContent = result.note;
+      setSystemMessage(status, result.note);
       state.current = await api(`/api/avatars/${state.currentId}`);
       renderProfile();
-      toast("资料已经确认，可以用于人格构建");
+      toast(tr("资料已经确认，可以用于人格构建"));
     }
     if (action === "cancel-job") {
       const jobId = event.target.closest("[data-job-id]").dataset.jobId;
       await api(`/api/avatars/${state.currentId}/training-jobs/${jobId}/cancel`, { method: "POST" });
-      await loadTrainingJobs(); toast("已请求取消构建任务");
+      await loadTrainingJobs(); toast(tr("已请求取消构建任务"));
     }
     if (action === "retry-job") {
       const jobId = event.target.closest("[data-job-id]").dataset.jobId;
       await api(`/api/avatars/${state.currentId}/training-jobs/${jobId}/retry`, { method: "POST" });
-      await loadTrainingJobs(); toast("任务已经重新进入队列");
+      await loadTrainingJobs(); toast(tr("任务已经重新进入队列"));
     }
     if (action === "run-cloud-job") {
       const jobId = event.target.closest("[data-job-id]").dataset.jobId;
-      if (!confirm("这会把该数字人的授权素材发送给已配置的云端服务商，并可能产生 API 费用。视频任务会异步生成，需要之后检查结果。继续吗？")) return;
+      if (!confirm(tr("这会把该数字人的授权素材发送给已配置的云端服务商，并可能产生 API 费用。视频任务会异步生成，需要之后检查结果。继续吗？"))) return;
       await api(`/api/avatars/${state.currentId}/training-jobs/${jobId}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm_billable_call: true }) });
-      await loadTrainingJobs(); toast("云端任务已更新");
+      await loadTrainingJobs(); toast(tr("云端任务已更新"));
     }
     if (action === "speak-message") {
       const text = event.target.closest(".message").querySelector("span").textContent;
-      if (!confirm("使用复刻声音播放会调用云端 TTS 并可能产生费用。继续吗？")) return;
+      if (!confirm(tr("使用复刻声音播放会调用云端 TTS 并可能产生费用。继续吗？"))) return;
       const response = await fetch(`/api/avatars/${state.currentId}/speech`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, confirm_billable_call: true }) });
-      if (!response.ok) { let detail = "语音生成失败"; try { detail = (await response.json()).detail || detail; } catch (_) {} throw new Error(detail); }
+      if (!response.ok) { let detail = tr("语音生成失败"); try { detail = (await response.json()).detail || detail; } catch (_) {} throw new Error(systemText(detail)); }
       await playSpeechBlob(await response.blob());
     }
     if (action === "evaluate-avatar") {
       const result = await api(`/api/avatars/${state.currentId}/evaluate`, { method: "POST" });
-      $("#evaluationResult").innerHTML = `<div class="evaluation-card"><div class="evaluation-score"><b>${result.score}</b><span>关键盲测</span></div><div>${(result.samples || []).map(sample => `<p><strong>${escapeHtml(sample.title)}</strong><small>${escapeHtml(sample.expected_signal)}</small></p>`).join("")}${result.checks.map(check => `<p class="${check.passed ? "passed" : "pending"}">${check.passed ? "✓" : "○"} ${escapeHtml(check.name)} <small>${escapeHtml(check.passed ? String(check.value ?? "") : check.recommendation)}</small></p>`).join("")}</div></div>`;
-      await loadTrainingJobs(); toast("就绪度评估已完成");
+      renderEvaluation(result, "evaluation");
+      await loadTrainingJobs(); toast(tr("就绪度评估已完成"));
     }
     if (action === "run-build-checks") {
       const result = await api(`/api/avatars/${state.currentId}/checks`);
-      $("#evaluationResult").innerHTML = `<div class="evaluation-card"><div class="evaluation-score"><b>${result.score}</b><span>构建检查</span></div><div>${result.checks.map(check => `<p class="${check.passed ? "passed" : "pending"}">${check.passed ? "✓" : "○"} ${escapeHtml(check.name)} <small>${escapeHtml(check.passed ? (check.level || check.severity) : check.recommendation)}</small></p>`).join("")}</div></div>`;
+      renderEvaluation(result, "checks");
       await loadBuildPanels();
     }
     if (action === "approve-video-review") {
-      if (!confirm("请先播放并检查人物、服装、物品和场景。确认这段视频可以使用吗？")) return;
+      if (!confirm(tr("请先播放并检查人物、服装、物品和场景。确认这段视频可以使用吗？"))) return;
       const runId = event.target.closest("[data-run-id]").dataset.runId;
       await api(`/api/avatars/${state.currentId}/continuity/runs/${runId}/approve`, { method: "POST" });
       await loadTrainingJobs();
-      toast("视频已通过人工确认并加入历史参考库");
+      toast(tr("视频已通过人工确认并加入历史参考库"));
     }
     if (action === "run-builder") {
       const result = await api(`/api/avatars/${state.currentId}/build`, { method: "POST" });
-      $("#evaluationResult").innerHTML = `<div class="evaluation-card"><div class="evaluation-score"><b>${result.score}</b><span>Builder</span></div><div>${result.checks.map(check => `<p class="${check.passed ? "passed" : "pending"}">${check.passed ? "✓" : "○"} ${escapeHtml(check.name)} <small>${escapeHtml(check.passed ? (check.level || check.severity) : check.recommendation)}</small></p>`).join("")}</div></div>`;
+      renderEvaluation(result, "builder");
       state.current = await api(`/api/avatars/${state.currentId}`);
       renderReadinessBanner();
       renderProfile();
       await loadTrainingJobs();
-      toast("统一 Builder 已运行");
+      toast(tr("统一 Builder 已运行"));
     }
     if (action === "advance-world") {
       const result = await api(`/api/avatars/${state.currentId}/world/advance`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ seconds: 3600, force_minor_event: true }) });
       await loadTrainingJobs();
-      toast(result.advanced ? "里世界已推进一小时" : result.reason || "里世界未推进");
+      toast(result.advanced ? tr("里世界已推进一小时") : systemText(result.reason) || tr("里世界未推进"));
     }
     if (action === "rollback-world") {
       const result = await api(`/api/avatars/${state.currentId}/world/rollback`, { method: "POST" });
       await loadTrainingJobs();
-      toast(result.rolled_back ? "已回滚最近一次世界事件" : result.reason || "没有可回滚事件");
+      toast(result.rolled_back ? tr("已回滚最近一次世界事件") : systemText(result.reason) || tr("没有可回滚事件"));
     }
     if (action === "rebuild-memory-graph") {
       await api(`/api/avatars/${state.currentId}/memory-graph/rebuild`, { method: "POST" });
       await loadTrainingJobs();
-      toast("记忆图谱已重建");
+      toast(tr("记忆图谱已重建"));
     }
     if (action === "rebuild-persona-core") {
       await api(`/api/avatars/${state.currentId}/persona-core/rebuild`, { method: "POST" });
       await loadTrainingJobs();
-      toast("Persona Core 已重建");
+      toast(tr("Persona Core 已重建"));
     }
     if (action === "review-world-proposal") {
       const proposalId = event.target.closest("[data-proposal-id]").dataset.proposalId;
       const reviewAction = event.target.closest("[data-review-action]").dataset.reviewAction;
-      await api(`/api/avatars/${state.currentId}/world/proposals/${proposalId}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: reviewAction, note: "构建中心审批" }) });
-      await loadTrainingJobs(); toast(reviewAction === "approve" ? "世界事实已批准" : "世界事实已拒绝");
+      await api(`/api/avatars/${state.currentId}/world/proposals/${proposalId}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: reviewAction, note: tr("构建中心审批") }) });
+      await loadTrainingJobs(); toast(reviewAction === "approve" ? tr("世界事实已批准") : tr("世界事实已拒绝"));
     }
     if (action === "update-visual-asset") {
       const node = event.target.closest("[data-asset-id]");
-      await api(`/api/avatars/${state.currentId}/visual-assets/${node.dataset.assetId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: node.dataset.status, note: "构建中心视觉审批" }) });
-      await loadTrainingJobs(); toast("视觉审批状态已更新");
+      await api(`/api/avatars/${state.currentId}/visual-assets/${node.dataset.assetId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: node.dataset.status, note: tr("构建中心视觉审批") }) });
+      await loadTrainingJobs(); toast(tr("视觉审批状态已更新"));
     }
     if (action === "organize-visual-assets") {
       const result = await api(`/api/avatars/${state.currentId}/visual-asset-sets/organize`, { method: "POST" });
       await loadTrainingJobs();
-      toast(result.organized ? `已整理 ${result.organized} 张素材` : "现有素材已经整理完成");
+      toast(result.organized ? tr`已整理 ${result.organized} 张素材` : tr("现有素材已经整理完成"));
     }
     if (action === "classify-visual-asset") {
       const node = event.target.closest("[data-asset-id]");
-      const names = { identity: "人物身份", wardrobe: "服装", prop: "物品", scene: "场景" };
+      const names = { identity: tr("人物身份"), wardrobe: tr("服装"), prop: tr("物品"), scene: tr("场景") };
       const setType = node.dataset.setType;
       state.pendingVisualClassification = { assetId: Number(node.dataset.assetId), assetStatus: node.dataset.assetStatus, setType };
-      $("#visualClassifyTitle").textContent = `整理为${names[setType]}素材包`;
-      $("#visualSetLabel").value = `默认${names[setType]}`;
+      $("#visualClassifyTitle").textContent = tr`整理为${names[setType]}素材包`;
+      $("#visualSetLabel").value = tr`默认${names[setType]}`;
       $("#visualSetRules").value = "";
       $("#visualClassifyDialog").showModal();
     }
@@ -250,10 +250,10 @@ document.addEventListener("click", async event => {
     if (action === "confirm-visual-classify") {
       const pending = state.pendingVisualClassification;
       if (!pending) return;
-      const names = { identity: "人物身份", wardrobe: "服装", prop: "物品", scene: "场景" };
+      const names = { identity: tr("人物身份"), wardrobe: tr("服装"), prop: tr("物品"), scene: tr("场景") };
       const setType = pending.setType;
       const label = $("#visualSetLabel").value.trim();
-      if (!label) throw new Error("请填写素材包名称");
+      if (!label) throw new Error(tr("请填写素材包名称"));
       const ruleText = $("#visualSetRules").value;
       const invariants = ruleText.split(/[,，]/).map(item => item.trim()).filter(Boolean);
       const assetSet = await api(`/api/avatars/${state.currentId}/visual-asset-sets`, {
@@ -273,18 +273,18 @@ document.addEventListener("click", async event => {
       state.pendingVisualClassification = null;
       $("#visualClassifyDialog").close();
       await loadTrainingJobs();
-      toast(`已加入${names[setType]}一致性素材包`);
+      toast(tr`已加入${names[setType]}一致性素材包`);
     }
     if (action === "select-voice-profile") {
       const profileId = event.target.closest("[data-profile-id]").dataset.profileId;
       await api(`/api/avatars/${state.currentId}/voice-profiles/${profileId}/select`, { method: "POST" });
-      await loadTrainingJobs(); toast("声音方案已选择");
+      await loadTrainingJobs(); toast(tr("声音方案已选择"));
     }
     if (action === "enable-preview") {
       state.previewMode = true;
       renderReadinessBanner();
       await loadMessages();
-      toast("已开启预览测试模式");
+      toast(tr("已开启预览测试模式"));
     }
     if (action === "continue-import") {
       setCreationMode(state.current?.subject_kind === "fictional" ? "fictional" : "real");
@@ -293,34 +293,34 @@ document.addEventListener("click", async event => {
     }
     if (action === "run-transcription") {
       const transcriptionId = event.target.closest("[data-transcription-id]").dataset.transcriptionId;
-      if (!confirm("这会把授权音频发送给当前 ASR 服务，并可能产生费用。继续吗？")) return;
+      if (!confirm(tr("这会把授权音频发送给当前 ASR 服务，并可能产生费用。继续吗？"))) return;
       await api(`/api/avatars/${state.currentId}/voice-transcriptions/${transcriptionId}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm_billable_call: true }) });
-      await loadTrainingJobs(); toast("自动转写完成，请检查后确认");
+      await loadTrainingJobs(); toast(tr("自动转写完成，请检查后确认"));
     }
     if (action === "confirm-transcription") {
       const transcriptionId = event.target.closest("[data-transcription-id]").dataset.transcriptionId;
       const text = $(`[data-transcription-text="${transcriptionId}"]`).value.trim();
-      if (!text) throw new Error("请先填写转写文本");
+      if (!text) throw new Error(tr("请先填写转写文本"));
       await api(`/api/avatars/${state.currentId}/voice-transcriptions/${transcriptionId}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transcript: text, use_as_memory: true }) });
-      await loadTrainingJobs(); toast("声音转写已进入证据库");
+      await loadTrainingJobs(); toast(tr("声音转写已进入证据库"));
     }
     if (action === "save-model-route") {
       const role = event.target.closest("[data-route]").dataset.route;
       const provider = $(`[data-route="${role}"][data-route-field="provider"]`).value;
       const primaryModel = $(`[data-route="${role}"][data-route-field="primary_model"]`).value;
       await api(`/api/settings/model-routes/${encodeURIComponent(role)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role, provider, primary_model: primaryModel, fallback_models: [], latency_class: "background", cost_class: "cheap" }) });
-      await loadBuildPanels(); toast("模型路由已保存");
+      await loadBuildPanels(); toast(tr("模型路由已保存"));
     }
     if (action === "download-templates") {
       const templates = await api("/api/templates/character");
       const blob = new Blob([templates.avatar_md + "\n\n--- character.yaml ---\n" + templates.character_yaml], { type: "text/plain;charset=utf-8" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob); link.download = "openavatar-character-templates.txt"; link.click(); URL.revokeObjectURL(link.href);
-      toast("设定模板已生成");
+      toast(tr("设定模板已生成"));
     }
     if (action === "refresh-connections") {
       await loadModelConnections();
-      toast("模型连接列表已刷新");
+      toast(tr("模型连接列表已刷新"));
     }
     if (action === "edit-model-connection") {
       const id = event.target.closest("[data-connection-id]").dataset.connectionId;
@@ -330,25 +330,25 @@ document.addEventListener("click", async event => {
       const id = event.target.closest("[data-connection-id]").dataset.connectionId;
       await api(`/api/model-connections/${encodeURIComponent(id)}/select`, { method: "POST" });
       await loadModelConnections();
-      toast("默认模型连接已切换");
+      toast(tr("默认模型连接已切换"));
     }
     if (action === "delete-model-connection") {
       const id = event.target.closest("[data-connection-id]").dataset.connectionId;
       const item = state.modelConnections.find(row => row.id === id);
-      if (!confirm(`删除模型连接“${item?.display_name || id}”？使用它的数字人会改为继承默认连接。`)) return;
+      if (!confirm(tr`删除模型连接“${item?.display_name || id}”？使用它的数字人会改为继承默认连接。`)) return;
       await api(`/api/model-connections/${encodeURIComponent(id)}`, { method: "DELETE" });
       fillConnectionEditor();
       await loadModelConnections();
-      toast("模型连接已删除");
+      toast(tr("模型连接已删除"));
     }
     if (action === "test-model-connection") {
       const result = await api("/api/model-connections/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...connectionPayload(), connection_id: $("#settingsDialog").dataset.editConnectionId || "" }) });
-      $("#dialogModelResult").textContent = result.message;
-      toast(result.ok ? "连接检查通过" : "连接检查未通过", !result.ok);
+      setSystemMessage($("#dialogModelResult"), result.message);
+      toast(result.ok ? tr("连接检查通过") : tr("连接检查未通过"), !result.ok);
     }
     if (action === "save-model-connection") {
       await saveModelConnection($("#dialogModelResult"));
-      toast("模型连接已保存，API Key 不会回显");
+      toast(tr("模型连接已保存，API Key 不会回显"));
     }
     if (action === "edit-provider-connection") {
       const id = event.target.closest("[data-provider-id]").dataset.providerId;
@@ -357,18 +357,18 @@ document.addEventListener("click", async event => {
     if (action === "delete-provider-connection") {
       const id = event.target.closest("[data-provider-id]").dataset.providerId;
       const item = state.providerHub.connections.find(row => row.id === id);
-      if (!confirm(`删除服务连接“${item?.display_name || id}”？引用它的能力路由也会被清除。`)) return;
+      if (!confirm(tr`删除服务连接“${item?.display_name || id}”？引用它的能力路由也会被清除。`)) return;
       await api(`/api/provider-connections/${encodeURIComponent(id)}`, { method: "DELETE" });
       $("#settingsDialog").dataset.editProviderId = "";
-      await loadProviderHub(); toast("服务连接已删除");
+      await loadProviderHub(); toast(tr("服务连接已删除"));
     }
     if (action === "save-provider-connection") {
       const id = $("#settingsDialog").dataset.editProviderId || "";
       const result = await api(id ? `/api/provider-connections/${encodeURIComponent(id)}` : "/api/provider-connections", { method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(providerPayload()) });
       $("#providerApiKey").value = "";
       $("#settingsDialog").dataset.editProviderId = result.id;
-      $("#providerResult").textContent = `服务已保存：${result.display_name}`;
-      await loadProviderHub(); await loadHealth(); toast("服务已保存，API Key 不会回显");
+      $("#providerResult").textContent = tr`服务已保存：${result.display_name}`;
+      await loadProviderHub(); await loadHealth(); toast(tr("服务已保存，API Key 不会回显"));
     }
     if (action === "test-provider-connection") {
       let id = event.target.closest("[data-provider-id]")?.dataset.providerId || $("#settingsDialog").dataset.editProviderId || "";
@@ -377,8 +377,8 @@ document.addEventListener("click", async event => {
         id = created.id; $("#settingsDialog").dataset.editProviderId = id; $("#providerApiKey").value = "";
       }
       const result = await api(`/api/provider-connections/${encodeURIComponent(id)}/test`, { method: "POST" });
-      $("#providerResult").textContent = `${result.message}${result.models?.length ? `：${result.models.slice(0, 8).join("、")}` : ""}`;
-      await loadProviderHub(); toast(result.ok ? "服务连接测试通过" : "服务连接测试未通过", !result.ok);
+      $("#providerResult").textContent = `${systemText(result.message)}${result.models?.length ? `：${result.models.slice(0, 8).join("、")}` : ""}`;
+      await loadProviderHub(); toast(result.ok ? tr("服务连接测试通过") : tr("服务连接测试未通过"), !result.ok);
     }
     if (action === "save-capability-route") {
       const capability = event.target.closest("[data-capability]").dataset.capability;
@@ -386,7 +386,7 @@ document.addEventListener("click", async event => {
       const fallback = $(`[data-cap-route-fallback="${capability}"]`).value;
       const scope = $("#capabilityRouteScope").value === "avatar" && state.currentId ? "avatar" : "global";
       await api("/api/capability-routes", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope_type: scope, avatar_id: scope === "avatar" ? state.currentId : "", capability, primary_connection_id: primary, fallback_connection_ids: fallback && fallback !== primary ? [fallback] : [], model: $(`[data-cap-route-model="${capability}"]`).value, config: {} }) });
-      await loadProviderHub(); await loadHealth(); toast(`${providerCapabilityLabels[capability] || capability}路由已生效`);
+      await loadProviderHub(); await loadHealth(); toast(tr`${tr(providerCapabilityLabels[capability] || capability)}路由已生效`);
     }
     if (action === "edit-ocr-connection") {
       const id = event.target.closest("[data-ocr-id]").dataset.ocrId;
@@ -396,21 +396,21 @@ document.addEventListener("click", async event => {
       const id = event.target.closest("[data-ocr-id]").dataset.ocrId;
       await api(`/api/ocr-connections/${encodeURIComponent(id)}/select`, { method: "POST" });
       await loadOcrConnections();
-      toast("默认 OCR 已切换");
+      toast(tr("默认 OCR 已切换"));
     }
     if (action === "delete-ocr-connection") {
       const id = event.target.closest("[data-ocr-id]").dataset.ocrId;
       const item = state.ocrConnections.find(row => row.id === id);
-      if (!confirm(`删除 OCR 连接“${item?.display_name || id}”？截图识别会回到自动检测/手动补文字。`)) return;
+      if (!confirm(tr`删除 OCR 连接“${item?.display_name || id}”？截图识别会回到自动检测/手动补文字。`)) return;
       await api(`/api/ocr-connections/${encodeURIComponent(id)}`, { method: "DELETE" });
       fillOcrEditor();
       await loadOcrConnections();
-      toast("OCR 连接已删除");
+      toast(tr("OCR 连接已删除"));
     }
     if (action === "test-ocr-connection") {
       const result = await api("/api/ocr-connections/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...ocrPayload(), connection_id: $("#settingsDialog").dataset.editOcrId || "" }) });
-      $("#ocrResult").textContent = result.message;
-      toast(result.ok ? "OCR 配置检查通过" : "OCR 配置未通过", !result.ok);
+      setSystemMessage($("#ocrResult"), result.message);
+      toast(result.ok ? tr("OCR 配置检查通过") : tr("OCR 配置未通过"), !result.ok);
     }
     if (action === "save-ocr-connection") {
       const id = $("#settingsDialog").dataset.editOcrId || "";
@@ -420,9 +420,9 @@ document.addEventListener("click", async event => {
         body: JSON.stringify(ocrPayload()),
       });
       $("#ocrApiKey").value = "";
-      $("#ocrResult").textContent = `OCR 已保存：${result.display_name}`;
+      $("#ocrResult").textContent = tr`OCR 已保存：${result.display_name}`;
       await loadOcrConnections();
-      toast("OCR 已保存，Key 不会回显");
+      toast(tr("OCR 已保存，Key 不会回显"));
     }
     if (action === "save-media-settings") {
       if ($("#dialogAliyunKey").value || $("#dialogNorthKey").value || $("#dialogMediaConsent").checked) await api("/api/settings/cloud-services", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
@@ -445,11 +445,11 @@ document.addEventListener("click", async event => {
       }) });
       $("#dialogAliyunKey").value = "";
       $("#dialogNorthKey").value = "";
-      toast("声音、形象与 North 视频通话设置已保存");
+      toast(tr("声音、形象与 North 视频通话设置已保存"));
     }
     if (action === "refresh-video-call") {
       await loadVideoCallStatus();
-      toast("实时视频状态已刷新");
+      toast(tr("实时视频状态已刷新"));
     }
     if (action === "start-video-call") {
       await startVideoCall();
@@ -461,7 +461,7 @@ document.addEventListener("click", async event => {
       state.callCameraEnabled = !state.callCameraEnabled;
       tracks.forEach(track => { track.enabled = state.callCameraEnabled; });
       const button = event.target.closest("button");
-      button.textContent = state.callCameraEnabled ? "关闭摄像头" : "开启摄像头";
+      button.textContent = state.callCameraEnabled ? tr("关闭摄像头") : tr("开启摄像头");
       button.setAttribute("aria-pressed", String(state.callCameraEnabled));
     }
     if (action === "toggle-call-microphone") {
@@ -469,27 +469,27 @@ document.addEventListener("click", async event => {
       state.callMicrophoneEnabled = !state.callMicrophoneEnabled;
       tracks.forEach(track => { track.enabled = state.callMicrophoneEnabled; });
       const button = event.target.closest("button");
-      button.textContent = state.callMicrophoneEnabled ? "静音" : "取消静音";
+      button.textContent = state.callMicrophoneEnabled ? tr("静音") : tr("取消静音");
       button.setAttribute("aria-pressed", String(state.callMicrophoneEnabled));
     }
     if (action === "end-video-call") {
-      if (!state.videoCall?.id) throw new Error("当前没有正在记录的视频通话");
+      if (!state.videoCall?.id) throw new Error(tr("当前没有正在记录的视频通话"));
       const ended = await api(`/api/avatars/${state.currentId}/calls/${state.videoCall.id}/end`, { method: "POST" });
       disconnectNorthLiveKit();
       state.videoCall = null;
-      $("#videoCallStatus").textContent = "实时视频通话已结束，North session 已请求释放。";
-      $("#videoCallDetails").innerHTML = `<span>${escapeHtml(ended.summary || "通话已结束")}</span>`;
-      toast("视频通话已结束");
+      $("#videoCallStatus").textContent = tr("实时视频通话已结束，North session 已请求释放。");
+      $("#videoCallDetails").innerHTML = `<span>${escapeHtml(ended.summary || tr("通话已结束"))}</span>`;
+      toast(tr("视频通话已结束"));
     }
     if (action === "prepare-video-background") {
       const result = await api(`/api/avatars/${state.currentId}/video-call/prepare-background`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "scene", prompt: "" }) });
-      $("#videoCallDetails").innerHTML = `<span>背景协议已准备</span><small>${escapeHtml(result.rule || result.reason || "")}</small>`;
-      toast(result.ok ? "通话背景已准备" : "通话背景不可用", !result.ok);
+      $("#videoCallDetails").innerHTML = tr`<span>背景协议已准备</span><small>${systemHtml(result.rule || result.reason || "")}</small>`;
+      toast(result.ok ? tr("通话背景已准备") : tr("通话背景不可用"), !result.ok);
     }
     if (action === "prepare-video-flip") {
       const result = await api(`/api/avatars/${state.currentId}/video-call/flip-video`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "flipped", prompt: "" }) });
-      $("#videoCallDetails").innerHTML = `<span>翻转镜头任务：${escapeHtml(result.taskId || "")}</span><small>${escapeHtml(result.note || result.reason || "")}</small>`;
-      toast(result.ok ? "翻转镜头任务已记录" : "翻转镜头不可用", !result.ok);
+      $("#videoCallDetails").innerHTML = tr`<span>翻转镜头任务：${escapeHtml(result.taskId || "")}</span><small>${systemHtml(result.note || result.reason || "")}</small>`;
+      toast(result.ok ? tr("翻转镜头任务已记录") : tr("翻转镜头不可用"), !result.ok);
     }
     if (action === "save-proactive") {
       state.current = await api(`/api/avatars/${state.currentId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proactive_enabled: $("#proactiveToggle").checked, proactive_interval_minutes: Number($("#proactiveInterval").value) }) });
@@ -506,7 +506,7 @@ document.addEventListener("click", async event => {
       if (state.current.proactive_enabled && "Notification" in window && Notification.permission === "default") {
         await Notification.requestPermission();
       }
-      toast(state.current.proactive_enabled ? "主动联系已开启，将调用当前模型" : "主动联系已关闭");
+      toast(state.current.proactive_enabled ? tr("主动联系已开启，将调用当前模型") : tr("主动联系已关闭"));
     }
     if (action === "save-avatar-model-settings") {
       const useConnection = $("#avatarModelMode").value === "connection";
@@ -517,7 +517,7 @@ document.addEventListener("click", async event => {
       }) });
       await loadAvatarModelSettings();
       await loadHealth();
-      toast("这个数字人的模型设置已保存");
+      toast(tr("这个数字人的模型设置已保存"));
     }
     if (action === "export-avatar") $("#packageExportDialog").showModal();
     if (action === "cancel-package-export") $("#packageExportDialog").close();
@@ -530,7 +530,7 @@ document.addEventListener("click", async event => {
         include_call_history: $("#exportCalls").checked,
       });
       const response = await fetch(`/api/avatars/${state.currentId}/export?${query}`, { method: "POST" });
-      if (!response.ok) throw new Error("导出失败");
+      if (!response.ok) throw new Error(tr("导出失败"));
       const blob = await response.blob(); const link = document.createElement("a");
       link.href = URL.createObjectURL(blob); link.download = `${state.current.name}.openavatar.zip`; link.click();
       window.setTimeout(() => URL.revokeObjectURL(link.href), 10000);
@@ -570,18 +570,18 @@ $("#identityForm").addEventListener("submit", async event => {
     state.currentId = avatar.id; state.current = avatar; goStep(2);
     if (state.creationMode === "fictional") await loadGuidedBuilder();
   } catch (error) {
-    toast(error instanceof SyntaxError ? "自定义世界规则需要是 JSON 格式" : error.message, true);
+    toast(error instanceof SyntaxError ? tr("自定义世界规则需要是 JSON 格式") : error.message, true);
   }
 });
 
 $$('.upload-card input[type="file"]').forEach(input => input.addEventListener("change", async event => {
   if (!state.currentId) return;
   for (const file of event.target.files) {
-    const row = document.createElement("div"); row.className = "upload-item"; row.innerHTML = `<span>${escapeHtml(file.name)}</span><span class="upload-status">正在本地处理…</span>`; $("#uploadList").prepend(row);
+    const row = document.createElement("div"); row.className = "upload-item"; row.innerHTML = tr`<span>${escapeHtml(file.name)}</span><span class="upload-status">正在本地处理…</span>`; $("#uploadList").prepend(row);
     try {
       const result = await api(`/api/avatars/${state.currentId}/imports?category=${encodeURIComponent(event.target.dataset.category)}`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream", "X-File-Name": encodeURIComponent(file.name) }, body: file });
-      row.dataset.uploadImport = result.id; row.querySelector(".upload-status").textContent = result.note;
-      if (result.status === "needs_review") row.insertAdjacentHTML("beforeend", `<button type="button" class="secondary" data-action="review-import" data-import-id="${result.id}">检查内容</button>`);
+      row.dataset.uploadImport = result.id; setSystemMessage(row.querySelector(".upload-status"), result.note);
+      if (result.status === "needs_review") row.insertAdjacentHTML("beforeend", tr`<button type="button" class="secondary" data-action="review-import" data-import-id="${result.id}">检查内容</button>`);
       state.current = await api(`/api/avatars/${state.currentId}`);
       renderProfile();
     }
@@ -601,7 +601,7 @@ $("#modelForm").addEventListener("submit", async event => {
   event.preventDefault();
   const connectionId = $("#wizardConnectionSelect").value;
   try {
-    if (!connectionId) throw new Error("请先新建一个模型连接");
+    if (!connectionId) throw new Error(tr("请先新建一个模型连接"));
     const connection = state.modelConnections.find(item => item.id === connectionId);
     await saveCurrentAvatarModelSettings({ mode: connection?.connection_type === "cloud_openai" ? "cloud" : "local", connection_id: connectionId }, $("#modelTestResult"));
     const result = await api(`/api/avatars/${state.currentId}/analyze`, { method: "POST" });
@@ -609,7 +609,7 @@ $("#modelForm").addEventListener("submit", async event => {
     $("#personaForm [name=traits]").value = (result.traits || []).join("\n");
     $("#personaForm [name=speaking_style]").value = result.speaking_style || "";
     $("#personaForm [name=boundaries]").value = result.boundaries || "";
-    $("#analysisMethod").textContent = result.method === "local_heuristic" ? "模型尚未就绪，已使用离线规则生成初步档案；可以修改后继续。" : `已使用当前模型连接分析，请检查后再保存。`;
+    $("#analysisMethod").textContent = result.method === "local_heuristic" ? tr("模型尚未就绪，已使用离线规则生成初步档案；可以修改后继续。") : tr`已使用当前模型连接分析，请检查后再保存。`;
     goStep(4);
   }
   catch (error) { toast(error.message, true); }
@@ -634,7 +634,7 @@ $("#worldModuleSelector").addEventListener("change", async event => {
     });
     state.guidedIndex = 0;
     renderGuidedBuilder();
-    toast(input.checked ? "已启用这个里世界模块" : "已暂时跳过这个模块");
+    toast(input.checked ? tr("已启用这个里世界模块") : tr("已暂时跳过这个模块"));
   } catch (error) {
     input.checked = !input.checked;
     $("#guidedAnswer").disabled = false;
