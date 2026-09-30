@@ -1,5 +1,7 @@
 # OpenAvatar Studio
 
+[GitHub 仓库](https://github.com/Mindy2000/OpenAvatar-Studio)
+
 [English](README_EN.md) · [用户手册](docs/GUIDE.md) · [隐私与数据](docs/PRIVACY.md)
 
 OpenAvatar Studio 是一个本地运行的数字人创建与管理工具。你可以用本人或明确授权的资料，或原创虚构设定，构建人格、记忆、声音、视觉身份和可编辑的世界，并连接自己的模型服务进行互动。

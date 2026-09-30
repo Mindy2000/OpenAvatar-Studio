@@ -6,9 +6,9 @@
 
 ## 私密报告
 
-优先使用 GitHub 的私密漏洞报告。如果本仓库已启用该功能，在仓库的 Security（或 Security and quality）区域选择 **Report a vulnerability**。它是面向维护者的非公开报告，普通访客看不到；不是公开 Issue 或评论。
+本仓库已启用 GitHub 私密漏洞报告。请使用[私密报告入口](https://github.com/Mindy2000/OpenAvatar-Studio/security/advisories/new)，或在仓库的 Security 区域选择 **Report a vulnerability**。它是面向维护者的非公开报告，普通访客看不到；不是公开 Issue 或评论。
 
-若看不到入口，说明该入口不可用。不要公开漏洞利用细节、真实 Key、数据库或人物包；可以只发一条不含敏感信息的 Issue 请求维护者提供私密渠道。本文件不代表 GitHub 设置已经启用，首次公开前维护者须配置该入口。
+若看不到入口，说明该入口不可用。不要公开漏洞利用细节、真实 Key、数据库或人物包；可以只发一条不含敏感信息的 Issue 请求维护者提供私密渠道。
 
 报告请包含版本、平台、影响、使用虚构数据的复现步骤及预期行为。普通功能建议和非安全缺陷可以使用公开 Issue。
 

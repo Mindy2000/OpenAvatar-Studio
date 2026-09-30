@@ -6,9 +6,9 @@ Maintenance currently targets release candidate 0.1.0; no long-term support seri
 
 ## Private reporting
 
-Prefer GitHub private vulnerability reporting. If enabled for this repository, select **Report a vulnerability** under Security (or Security and quality). Reports are private to the reporting/authorized maintenance participants, not visible as ordinary public issues or comments.
+GitHub private vulnerability reporting is enabled for this repository. Use the [private reporting form](https://github.com/Mindy2000/OpenAvatar-Studio/security/advisories/new) or select **Report a vulnerability** under Security. Reports are private to the reporting/authorized maintenance participants, not visible as ordinary public issues or comments.
 
-If the entry is unavailable, do not post exploit details, real keys, databases, or avatar packages publicly. You may open a non-sensitive issue asking for a private reporting channel. This file does not enable GitHub settings; maintainers must configure reporting before the first public release.
+If the entry is unavailable, do not post exploit details, real keys, databases, or avatar packages publicly. You may open a non-sensitive issue asking for a private reporting channel.
 
 Include version, platform, impact, reproduction with fictional data, and expected behavior. Ordinary feature requests and non-security bugs may use public issues.
 

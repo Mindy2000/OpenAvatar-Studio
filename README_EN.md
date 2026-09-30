@@ -1,5 +1,7 @@
 # OpenAvatar Studio
 
+[GitHub repository](https://github.com/Mindy2000/OpenAvatar-Studio)
+
 [中文](README.md) · [User guide](docs/GUIDE_EN.md) · [Privacy and data](docs/PRIVACY_EN.md)
 
 OpenAvatar Studio is a locally running avatar creation and management tool. Build persona, memory, voice, visual identity, and editable worlds from your own or explicitly authorized materials, or from original fictional settings. Connect your own model services to interact with avatars.
