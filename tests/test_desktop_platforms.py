@@ -75,3 +75,19 @@ def test_readiness_rejects_unrelated_http_service(tmp_path):
         finally:
             http.shutdown()
             thread.join(timeout=2)
+
+
+def test_readiness_does_not_probe_model_providers(monkeypatch):
+    from fastapi.testclient import TestClient
+    from openavatar.main import app
+    from openavatar.routes import system
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Readiness must not access model services or credentials")
+
+    monkeypatch.setattr(system, 'provider_config', unexpected)
+    monkeypatch.setattr(system, 'model_client', unexpected)
+    with TestClient(app) as client:
+        response = client.get('/api/ready')
+    assert response.status_code == 200
+    assert response.json()['service'] == 'openavatar-studio'

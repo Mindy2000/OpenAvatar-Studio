@@ -77,9 +77,9 @@ def wait_until_ready(runtime: DesktopRuntime, timeout: float = 12.0, *, server=N
             return False
         try:
             if server is None or server.started:
-                with opener.open(runtime.url + "/api/health", timeout=0.5) as response:
+                with opener.open(runtime.url + "/api/ready", timeout=0.5) as response:
                     health = json.loads(response.read(65536))
-                if health.get("ok") is True and "version" in health:
+                if health.get("ok") is True and health.get("service") == "openavatar-studio" and "version" in health:
                     return True
         except (OSError, ValueError, AttributeError):
             pass

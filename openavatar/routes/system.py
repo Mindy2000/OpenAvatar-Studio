@@ -12,6 +12,11 @@ def create_system_router(context: ApplicationContext) -> APIRouter:
     runs = context.runs
     chat_service = context.chat
 
+    @router.get("/api/ready")
+    def ready() -> dict[str, Any]:
+        # Startup readiness must not wait for optional model/provider connections.
+        return {"ok": True, "service": "openavatar-studio", "version": __version__}
+
     @router.get("/api/health")
     def health() -> dict[str, Any]:
         config = provider_config(db, selected)
