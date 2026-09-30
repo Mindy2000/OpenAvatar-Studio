@@ -37,9 +37,20 @@ function systemText(source) {
   const dictionary = state.messages.system || {};
   if (Object.hasOwn(dictionary, source)) return dictionary[source];
   if (Object.hasOwn(state.messages.literals || {}, source)) return state.messages.literals[source];
+  // Python KeyError adds quotes; aggregated adapter failures use a full-width semicolon.
+  if (source.length > 1 && ["'", '"'].includes(source[0]) && source.at(-1) === source[0]) {
+    const inner = source.slice(1, -1);
+    const translated = systemText(inner);
+    if (translated !== inner) return translated;
+  }
   for (const { pattern, keys, translated } of systemTemplates) {
     const match = source.match(pattern);
     if (match) return translated.replace(/\{(\d+)\}/g, (_, key) => match[keys.indexOf(key) + 1] ?? "");
+  }
+  if (source.includes("；")) {
+    const parts = source.split("；");
+    const translated = parts.map(part => systemText(part));
+    if (translated.some((part, index) => part !== parts[index])) return translated.join("; ");
   }
   return source;
 }

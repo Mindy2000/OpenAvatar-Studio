@@ -112,6 +112,8 @@ def main() -> None:
         assert error == "Avatar not found", error
         assert page.evaluate("systemText('模型连接测试失败（HTTP 503）')") == "Model connection test failed (HTTP 503)"
         assert page.evaluate("systemText('服务连接不存在：声音样本')") == "Service connection not found: 声音样本"
+        assert page.evaluate("source => systemText(source)", "'未知 Builder 问题'") == "Unknown Builder question"
+        assert page.evaluate("source => systemText(source)", "尚未配置 API Key；没有可用的视频服务") == "No API key configured; No available video service"
         # Remembered locale must work on a fresh page, with the avatar language unchanged.
         page.reload(wait_until="networkidle")
         assert page.locator("html").get_attribute("lang") == "en-US"
