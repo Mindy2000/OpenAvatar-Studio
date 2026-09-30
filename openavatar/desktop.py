@@ -60,7 +60,7 @@ def start_server(runtime: DesktopRuntime) -> uvicorn.Server:
     # main creates the application on import, after the desktop data directory is set.
     from openavatar.main import app
 
-    config = uvicorn.Config(app, host=runtime.host, port=runtime.port, log_level="info", access_log=False)
+    config = uvicorn.Config(app, host=runtime.host, port=runtime.port, log_level="info", access_log=False, use_colors=False)
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, name="openavatar-server", daemon=True)
     thread.start()
