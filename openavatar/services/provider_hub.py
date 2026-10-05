@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import math
+from urllib.parse import urlparse
 import time
 import urllib.error
 import urllib.request
@@ -103,6 +105,11 @@ def _validate_connection(payload: ProviderConnectionPayload) -> str:
     invalid = set(payload.capabilities) - set(CAPABILITIES)
     if invalid:
         raise ProviderError(f"不支持的能力：{', '.join(sorted(invalid))}")
+    costs = payload.config.get("cost_estimates", {})
+    if not isinstance(costs, dict):
+        raise ProviderError("单次费用估算必须按能力填写人民币金额")
+    for capability, value in costs.items():
+        _validate_cost(value, positive=capability == "voice_clone" and payload.provider_kind != "local")
     return base_url
 
 
@@ -185,11 +192,11 @@ def find_route(db: Database, capability: str, avatar_id: str = "") -> dict[str, 
 
 
 def _spent(db: Database, connection_id: str, since: int) -> float:
-    row = db.one("SELECT COALESCE(SUM(estimated_cost),0) AS total FROM usage_events WHERE provider=? AND created_at>=?", (connection_id, since))
+    row = db.one("SELECT COALESCE(SUM(estimated_cost),0) AS total FROM usage_events WHERE provider=? AND created_at>=? AND CASE WHEN json_valid(metadata_json) THEN COALESCE(json_extract(metadata_json,'$.imported_history'),0) ELSE 0 END=0", (connection_id, since))
     return float((row or {}).get("total", 0) or 0)
 
 
-def assert_allowed(db: Database, row: dict[str, Any], capability: str) -> None:
+def assert_allowed(db: Database, row: dict[str, Any], capability: str, *, upcoming_cost: float = 0) -> None:
     if not bool(row.get("enabled")):
         raise ProviderError("服务连接已停用")
     if row.get("provider_kind") == "local":
@@ -203,6 +210,10 @@ def assert_allowed(db: Database, row: dict[str, Any], capability: str) -> None:
     day_start = now - (now % 86400)
     month_start = int(datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp())
     daily, monthly = float(budget.get("daily", 0) or 0), float(budget.get("monthly", 0) or 0)
+    if upcoming_cost and daily and _spent(db, str(row["id"]), day_start) + upcoming_cost > daily:
+        raise ProviderError("本次估算费用将超过今日剩余预算")
+    if upcoming_cost and monthly and _spent(db, str(row["id"]), month_start) + upcoming_cost > monthly:
+        raise ProviderError("本次估算费用将超过本月剩余预算")
     if daily and _spent(db, str(row["id"]), day_start) >= daily:
         raise ProviderError("该服务已达到今日预算上限")
     if monthly and _spent(db, str(row["id"]), month_start) >= monthly:
@@ -300,15 +311,52 @@ def record_provider_usage(db: Database, avatar_id: str, connection_id: str, mode
     )
 
 
+# Mainland list price checked 2026-10-05. Amounts here are CNY, not USD.
+# https://platform.minimax.cn/docs/guides/pricing-paygo
+MINIMAX_CN_VOICE_CLONE_CNY = 9.9
+
+
+def _validate_cost(value: Any, *, positive: bool = False) -> float:
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        raise ProviderError("费用估算必须是有效人民币金额") from None
+    if isinstance(value, bool) or not math.isfinite(amount) or amount < 0 or (positive and amount == 0):
+        raise ProviderError("费用估算必须是有效人民币金额；云端声音复刻估价必须大于0")
+    return amount
+
+
+def voice_clone_cost(row: dict[str, Any]) -> float:
+    custom = _loads(row.get("config_json"), {}).get("cost_estimates", {})
+    if not isinstance(custom, dict):
+        raise ProviderError("单次费用估算必须按能力填写人民币金额")
+    if "voice_clone" in custom:
+        return _validate_cost(custom["voice_clone"], positive=row.get("provider_kind") != "local")
+    if row.get("provider_kind") == "local":
+        return 0.0
+    host = (urlparse(str(row.get("base_url", ""))).hostname or "").lower()
+    if row.get("provider_kind") == "minimax" and host in {"api.minimaxi.com", "api.minimax.cn"}:
+        return MINIMAX_CN_VOICE_CLONE_CNY
+    raise ProviderError("该连接没有可靠的人民币复刻估价，请在高级配置cost_estimates.voice_clone填写单次人民币金额")
+
+
+def prepare_voice_clone_cost(db: Database, row: dict[str, Any]) -> float:
+    cost = voice_clone_cost(row)
+    assert_allowed(db, row, "voice_clone", upcoming_cost=cost)
+    return cost
+
+
 def estimate_provider_cost(row: dict[str, Any], capability: str, *, input_units: int = 0, output_units: int = 0) -> float:
+    if capability == "voice_clone":
+        return voice_clone_cost(row)
     config = _loads(row.get("config_json"), {})
     custom = config.get("cost_estimates") if isinstance(config.get("cost_estimates"), dict) else {}
     if capability in custom:
-        return max(0.0, float(custom[capability]))
+        return _validate_cost(custom[capability])
     if row.get("provider_kind") != "minimax":
         return 0.0
     if capability == "chat":
         return round((input_units / 4) * 0.3 / 1_000_000 + (output_units / 4) * 1.2 / 1_000_000, 8)
     if capability == "tts":
         return round(input_units * 0.0001, 6)
-    return {"voice_clone": 1.5, "image": 0.01, "video": 0.48}.get(capability, 0.0)
+    return {"image": 0.01, "video": 0.48}.get(capability, 0.0)

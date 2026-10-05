@@ -333,6 +333,11 @@ def _select_set(sets: list[dict[str, Any]], set_type: str, prompt: str, requeste
     candidates = [item for item in sets if item["set_type"] == set_type and item["status"] in APPROVED_STATUSES]
     if not candidates:
         return None
+    if set_type == "scene" and requested:
+        # A different scene's frame must never make this scene look ready.
+        return next((item for item in candidates if requested.lower() in {
+            str(item["semantic_key"]).lower(), str(item["label"]).lower(),
+        }), None)
     text = f"{prompt} {requested}".lower()
     matched = [item for item in candidates if item["semantic_key"].lower() in text or str(item["label"]).lower() in text]
     return (matched or sorted(candidates, key=lambda item: (item["status"] == "canonical", item["updated_at"]), reverse=True))[0]

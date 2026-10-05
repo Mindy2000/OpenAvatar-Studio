@@ -15,6 +15,8 @@ import pytest
 def isolated_credentials(monkeypatch):
     """Exercise credential operations without reading or changing the OS keyring."""
     credentials = {}
+    from openavatar import providers
+    monkeypatch.setattr(providers, "_credential_cache", {})
     for name in ('OPENAVATAR_API_KEY', 'OPENAVATAR_ALIYUN_API_KEY', 'OPENAVATAR_KIMI_API_KEY', 'NORTH_API_KEY'):
         monkeypatch.delenv(name, raising=False)
 

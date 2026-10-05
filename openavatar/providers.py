@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import ssl
+import threading
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -18,6 +19,8 @@ from openavatar.local_model import LocalModelError, OllamaClient, local_urlopen,
 
 KEYRING_SERVICE = "OpenAvatar Studio"
 KEYRING_ACCOUNT = "chat-provider-api-key"
+_credential_cache: dict[str, str] = {}
+_credential_lock = threading.RLock()
 KEYRING_ACCOUNTS = {
     "chat": KEYRING_ACCOUNT,
     "aliyun": "aliyun-dashscope-api-key",
@@ -80,7 +83,9 @@ def scoped_provider_key_name(provider: str, scope: str = "") -> str:
 def store_provider_key(provider: str, value: str) -> None:
     account = KEYRING_ACCOUNTS.get(provider) or f"provider-api-key:{provider}"
     try:
-        keyring.set_password(KEYRING_SERVICE, account, value)
+        with _credential_lock:
+            keyring.set_password(KEYRING_SERVICE, account, value)
+            _credential_cache[account] = value
     except KeyringError as exc:
         raise ProviderError(f"无法写入系统安全凭据库：{exc}") from exc
 
@@ -106,7 +111,13 @@ def load_provider_key(provider: str) -> str:
         return env_value
     account = KEYRING_ACCOUNTS.get(provider) or f"provider-api-key:{provider}"
     try:
-        return keyring.get_password(KEYRING_SERVICE, account) or ""
+        with _credential_lock:
+            if account in _credential_cache:
+                return _credential_cache[account]
+            value = keyring.get_password(KEYRING_SERVICE, account) or ""
+            if value:
+                _credential_cache[account] = value
+            return value
     except KeyringError:
         return ""
 
@@ -114,8 +125,10 @@ def load_provider_key(provider: str) -> str:
 def delete_provider_key(provider: str) -> None:
     account = KEYRING_ACCOUNTS.get(provider) or f"provider-api-key:{provider}"
     try:
-        if keyring.get_password(KEYRING_SERVICE, account):
-            keyring.delete_password(KEYRING_SERVICE, account)
+        with _credential_lock:
+            if account in _credential_cache or keyring.get_password(KEYRING_SERVICE, account):
+                keyring.delete_password(KEYRING_SERVICE, account)
+            _credential_cache.pop(account, None)
     except KeyringError as exc:
         raise ProviderError(f"无法从系统安全凭据库删除 API Key：{exc}") from exc
 
@@ -127,6 +140,13 @@ class OpenAICompatibleClient:
         self.api_key = api_key
         self.timeout = timeout
         self.api_key_required = api_key_required
+
+    def _request_options(self) -> dict[str, object]:
+        # MiniMax otherwise embeds reasoning in content, breaking JSON consumers
+        # and exposing it as avatar speech. Other compatible APIs stay unchanged.
+        if urlparse(self.base_url).hostname in {"api.minimaxi.com", "api.minimax.cn", "api.minimax.io", "api-bj.minimaxi.com"}:
+            return {"reasoning_split": True}
+        return {}
 
     def _open(self, request, *, timeout, context):
         if not self.api_key_required:
@@ -155,6 +175,7 @@ class OpenAICompatibleClient:
         if self.api_key_required and not self.api_key:
             raise ProviderError("尚未配置 API Key")
         payload: dict[str, object] = {"model": self.model, "messages": messages, "stream": False}
+        payload.update(self._request_options())
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
         request = urllib.request.Request(
@@ -174,6 +195,7 @@ class OpenAICompatibleClient:
         if self.api_key_required and not self.api_key:
             raise ProviderError("尚未配置 API Key")
         payload = {"model": self.model, "messages": messages, "stream": True}
+        payload.update(self._request_options())
         request = urllib.request.Request(
             f"{self.base_url}/chat/completions",
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),

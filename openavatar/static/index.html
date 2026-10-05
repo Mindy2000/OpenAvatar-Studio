@@ -159,9 +159,9 @@
           </div>
 
           <div id="step5" class="step-panel hidden finish-panel">
-            <div class="finish-mark">✓</div><span class="panel-kicker">创建完成</span><h2>数字人已经准备好了</h2>
-            <p>你可以马上聊天，也可以继续补充资料。主动联系默认关闭；开启后会调用当前模型，云端模式可能产生API费用。</p>
-            <div class="finish-actions"><button class="primary large" data-action="open-current">开始聊天 →</button><button class="secondary large" data-action="home">返回首页</button></div>
+            <div class="finish-mark">✓</div><span class="panel-kicker">创建完成</span><h2>人物档案已保存</h2>
+            <p>进入工作室后，请先查看构建中心的就绪状态。模型可用后才能对话；你也可以继续补充资料。主动联系默认关闭。</p>
+            <div class="finish-actions"><button class="primary large" data-action="open-current">进入人物工作室 →</button><button class="secondary large" data-action="home">返回首页</button></div>
           </div>
         </div>
       </div>
@@ -178,34 +178,30 @@
         <div class="studio-main">
           <section id="chatTab" class="tab-panel chat-panel">
             <div id="readinessBanner" class="readiness-banner"></div>
-            <div id="videoCallPanel" class="video-call-panel">
-              <div><span>REALTIME VIDEO</span><b>North/Atlas 实时视频通话</b><small id="videoCallStatus">检查配置中…</small></div>
-              <div class="inline-actions">
-                <button class="secondary" data-action="refresh-video-call">刷新</button>
-                <button class="primary" data-action="start-video-call">开始视频通话</button>
-                <button class="secondary" data-action="prepare-video-background">准备背景</button>
-                <button class="secondary" data-action="prepare-video-flip">翻转镜头</button>
-                <button class="danger" data-action="end-video-call">结束</button>
-              </div>
-              <div id="videoCallDetails" class="video-call-details"></div>
-              <div id="videoLiveKitStage" class="video-livekit-stage">
-                <div class="video-placeholder"><b>LiveKit Avatar</b><span>开始通话后会显示 North 返回的实时头像画面。</span></div>
-              </div>
-              <div id="videoCallControls" class="video-call-controls hidden">
-                <video id="localCameraPreview" class="local-camera-preview hidden" autoplay muted playsinline aria-label="本机摄像头预览"></video>
-                <label class="full" for="videoTranscriptInput">你想说的话</label>
-                <textarea id="videoTranscriptInput" rows="2" placeholder="可以点击麦克风说话，也可以直接输入文字。"></textarea>
-                <div class="form-actions">
-                  <button type="button" class="secondary" data-action="listen-video-turn" title="使用浏览器语音识别">麦克风输入</button>
-                  <button type="button" class="primary" data-action="send-video-turn">发送这一轮</button>
-                  <button type="button" class="secondary" data-action="toggle-call-camera" aria-pressed="true">关闭摄像头</button>
-                  <button type="button" class="secondary" data-action="toggle-call-microphone" aria-pressed="true">静音</button>
-                </div>
-                <small id="videoTurnStatus">通话已连接。浏览器语音识别可能使用操作系统或浏览器提供的服务；也可以只输入文字。</small>
-              </div>
-            </div>
+            <header class="conversation-header"><div class="chat-avatar" id="chatAvatar">O</div><div><h2 id="chatPersonName">聊天</h2><span>文字、语音，分享日常</span></div><button type="button" id="chatMore" aria-label="聊天设置">•••</button></header>
             <div id="messageList" class="messages"></div>
-            <form id="chatForm" class="composer"><label class="sr-only" for="chatMessageInput">聊天消息</label><textarea id="chatMessageInput" name="message" rows="1" placeholder="说点什么…" required></textarea><button class="primary">发送</button></form>
+            <div class="chat-composer-shell">
+              <div id="composerNotice" class="composer-notice" role="status" hidden></div>
+              <form id="chatForm" class="composer">
+                <button type="button" id="toggleVoiceMessage" class="composer-icon" aria-label="切换到语音消息" aria-pressed="false" data-icon="mic"></button>
+                <label class="sr-only" for="chatMessageInput">聊天消息</label><textarea id="chatMessageInput" name="message" rows="1" placeholder="说点什么…"></textarea>
+                <button type="button" id="holdVoiceMessage" hidden>按住说话</button>
+                <button type="button" id="toggleEmoji" class="composer-icon" aria-label="表情" aria-expanded="false" data-icon="smile"></button>
+                <button type="button" id="toggleChatMore" class="composer-icon" aria-label="更多功能" aria-expanded="false" data-icon="plus"></button>
+                <button type="submit" id="sendChatText" class="chat-send" hidden>发送</button>
+              </form>
+              <div id="chatEmojiPanel" class="emoji-panel" hidden aria-label="选择表情"></div>
+              <div id="chatMorePanel" class="chat-more-panel" hidden aria-label="更多聊天功能">
+                <button type="button" data-chat-tool="image"><i data-icon="image"></i><span>图片 / 视频</span></button>
+                <button type="button" data-chat-tool="camera"><i data-icon="camera"></i><span>拍摄</span></button>
+                <button type="button" data-chat-tool="call"><i data-icon="phone"></i><span>通话</span></button>
+                <button type="button" data-chat-tool="file"><i data-icon="file"></i><span>文件</span></button>
+                <button type="button" data-chat-tool="location"><i data-icon="pin"></i><span>位置</span></button>
+                <button type="button" data-chat-tool="favorites"><i data-icon="star"></i><span>收藏</span></button>
+              </div>
+              <input id="chatMediaPicker" type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime" hidden>
+              <input id="chatFilePicker" type="file" hidden>
+            </div>
           </section>
           <section id="historyTab" class="tab-panel hidden settings-panel timeline-panel">
             <span class="panel-kicker">CHAT HISTORY</span><h2>聊天记录</h2>
@@ -280,12 +276,59 @@
               <label class="check-card full"><input id="proactiveUseMemory" type="checkbox" checked><span><b>允许使用长期记忆选择话题</b><small>只使用当前数字人的记忆与设定。</small></span></label>
               <label class="check-card full"><input id="proactiveAdvanceWorld" type="checkbox"><span><b>允许推动里世界轻微事件</b><small>高影响事件仍进入世界事实审批。</small></span></label>
             </div>
+            <div class="button-stack"><button type="button" class="secondary" data-action="open-maintenance">数据维护</button></div>
             <div class="button-stack"><button class="primary" data-action="save-proactive">保存主动联系设置</button><button class="secondary" data-action="export-avatar">导出完整人物包</button><button class="danger" data-action="delete-avatar">永久删除这个数字人</button></div>
           </section>
         </div>
       </div>
     </section>
   </main>
+
+  <dialog id="callChoiceDialog" class="chat-choice-dialog"><div class="call-choice-title">选择通话方式</div><button type="button" id="startVoiceCall"><span data-icon="phone"></span>语音通话</button><button type="button" id="chooseVideoCall"><span data-icon="camera"></span>视频通话</button><button type="button" data-close-chat-dialog>取消</button><span id="voiceEntryStatus" hidden></span></dialog>
+  <dialog id="chatVideoDialog" class="chat-video-dialog"><div class="chat-dialog-heading"><h2>视频通话</h2><button type="button" data-close-chat-dialog aria-label="关闭视频通话窗口">×</button></div>
+            <div id="videoCallPanel" class="video-call-panel">
+              <div><span>REALTIME VIDEO</span><b>North/Atlas 实时视频通话</b><small id="videoCallStatus">检查配置中…</small></div>
+              <div class="inline-actions">
+                <button class="secondary" data-action="refresh-video-call">刷新</button>
+                <button class="primary" data-action="start-video-call">开始视频通话</button>
+                <button class="secondary" data-action="prepare-video-background">准备背景</button>
+                <button class="secondary" data-action="prepare-video-flip">翻转镜头</button>
+                <button class="danger" data-action="end-video-call">结束</button>
+              </div>
+              <div id="videoCallDetails" class="video-call-details"></div>
+              <div id="videoLiveKitStage" class="video-livekit-stage">
+                <div class="video-placeholder"><b>LiveKit Avatar</b><span>开始通话后会显示 North 返回的实时头像画面。</span></div>
+              </div>
+              <div id="videoCallControls" class="video-call-controls hidden">
+                <video id="localCameraPreview" class="local-camera-preview hidden" autoplay muted playsinline aria-label="本机摄像头预览"></video>
+                <label class="full" for="videoTranscriptInput">你想说的话</label>
+                <textarea id="videoTranscriptInput" rows="2" placeholder="可以点击麦克风说话，也可以直接输入文字。"></textarea>
+                <div class="form-actions">
+                  <button type="button" class="secondary" data-action="listen-video-turn" title="使用浏览器语音识别">麦克风输入</button>
+                  <button type="button" class="primary" data-action="send-video-turn">发送这一轮</button>
+                  <button type="button" class="secondary" data-action="toggle-call-camera" aria-pressed="true">关闭摄像头</button>
+                  <button type="button" class="secondary" data-action="toggle-call-microphone" aria-pressed="true">静音</button>
+                </div>
+                <small id="videoTurnStatus">通话已连接。浏览器语音识别可能使用操作系统或浏览器提供的服务；也可以只输入文字。</small>
+              </div>
+            </div>
+  </dialog>
+  <dialog id="chatAttachmentDialog" class="chat-attachment-dialog"><div class="chat-dialog-heading"><h2 id="attachmentTitle">发送附件</h2><button type="button" data-close-chat-dialog aria-label="取消附件">×</button></div><div id="attachmentPreview"></div><label id="voiceTranscriptLabel" hidden>识别文字（可修改）<textarea id="voiceMessageTranscript" rows="2" placeholder="识别失败时可补充文字，或只发送录音"></textarea></label><p id="attachmentNote" class="chat-dialog-note"></p><div id="attachmentError" class="chat-inline-error" role="alert"></div><div class="chat-dialog-actions"><button type="button" data-close-chat-dialog>取消</button><button type="button" id="sendChatAttachment" class="chat-send">发送</button></div></dialog>
+  <dialog id="chatCameraDialog" class="chat-attachment-dialog"><div class="chat-dialog-heading"><h2>拍摄照片</h2><button type="button" data-close-chat-dialog aria-label="关闭相机">×</button></div><video id="chatCameraPreview" class="camera-mirrored" autoplay muted playsinline></video><label class="camera-mirror-option"><input type="checkbox" id="chatCameraMirror" checked>镜像自拍（预览和照片一致）</label><p id="cameraStatus" class="chat-dialog-note">只在本机预览，拍好后确认发送。</p><div class="chat-dialog-actions"><button type="button" id="captureChatPhoto" class="chat-send">拍照</button></div></dialog>
+  <dialog id="chatLocationDialog" class="chat-attachment-dialog"><form id="chatLocationForm"><div class="chat-dialog-heading"><h2>发送位置</h2><button type="button" data-close-chat-dialog aria-label="取消位置">×</button></div><label>地点名称<input name="place" required maxlength="120" placeholder="例如：学校图书馆"></label><label>地址或补充说明<input name="address" maxlength="500" placeholder="例如：图书馆南门"></label><p class="chat-dialog-note">手动填写地点，不自动获取或持续共享定位。</p><div class="chat-inline-error" role="alert"></div><div class="chat-dialog-actions"><button class="chat-send">发送位置</button></div></form></dialog>
+  <dialog id="chatFavoritesDialog" class="chat-attachment-dialog"><div class="chat-dialog-heading"><h2>收藏</h2><button type="button" data-close-chat-dialog aria-label="关闭收藏">×</button></div><div id="chatFavoritesList"></div></dialog>
+  <dialog id="voiceCallDialog" class="voice-call-window" aria-labelledby="voicePersonName">
+    <div class="voice-window-top"><span>语音通话</span><button type="button" id="minimizeVoiceCall" aria-label="最小化通话窗口">—</button><button type="button" id="closeVoiceWindow" aria-label="关闭并结束通话">×</button></div>
+    <div class="voice-person"><div class="voice-avatar-frame"><img id="voicePersonAvatar" alt="已确认的人物头像" hidden><span id="voicePersonInitial">O</span></div><h2 id="voicePersonName">数字人</h2><p id="voiceCallStatus" role="status" aria-live="polite">准备好，就和我说说话吧</p><time id="voiceCallTimer">00:00</time></div>
+    <div id="voiceCallBeforeStart" class="voice-before-start"><p>使用已选择的人物声音 · 建议佩戴耳机</p><small>本次最多3轮、10分钟。浏览器可能将音频发送给识别服务；对话和声音合成可能收费。</small><button type="button" id="connectVoiceCall">☎ 开始通话</button></div>
+    <div id="voiceCallActions" class="voice-call-actions" hidden>
+      <button type="button" id="muteVoiceCall" aria-pressed="false"><span class="voice-control-icon"><svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></span><span id="voiceMuteLabel">麦克风已开</span></button>
+      <button type="button" id="endVoiceCall" class="voice-hangup"><span class="voice-control-icon"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M2 12c5.5-5.3 14.5-5.3 20 0l-2.5 4-4-2v-3a12 12 0 0 0-7 0v3l-4 2z"/></svg></span><span>挂断</span></button>
+      <button type="button" id="interruptVoiceCall"><span class="voice-control-icon">Ⅱ</span><span>打断回复</span></button>
+    </div>
+    <button type="button" id="dismissVoiceCall" class="voice-dismiss" hidden>返回聊天</button>
+  </dialog>
+  <button type="button" id="voiceCallFloating" class="voice-call-floating" hidden aria-label="返回语音通话窗口"><span>☎</span><b id="voiceFloatingName">语音通话</b><time id="voiceFloatingTimer">00:00</time></button>
 
   <dialog id="onboardingDialog" class="wide-dialog">
     <form method="dialog" class="dialog-card onboarding-card"><button class="dialog-close">×</button><span class="panel-kicker">首次使用向导</span><h2>先理解，再开始创建</h2><p>我建议使用“步骤卡 + 关键提示”：第一次用步骤卡讲清楚全局流程，进入系统后再用页面内提示辅助操作。</p>
@@ -307,6 +350,8 @@
       <div class="form-actions"><button type="button" class="secondary" data-action="refresh-diagnostics">重新检查</button><button type="button" class="primary" data-action="open-settings">管理模型连接</button></div>
     </form>
   </dialog>
+
+  <dialog id="maintenanceDialog" class="wide-dialog"><form method="dialog" class="dialog-card"><button class="dialog-close">×</button><div id="maintenanceContent"></div></form></dialog>
 
   <dialog id="privacyDialog" class="wide-dialog">
     <form method="dialog" class="dialog-card"><button class="dialog-close">×</button><span class="panel-kicker">权限与隐私</span><h2>哪些数据会去哪里</h2>
@@ -336,7 +381,7 @@
         <label class="check-card"><input id="exportAudio" type="checkbox" checked><span><b>音频与声音样本</b><small>不包含 API Key；外部复刻声音需要重新绑定。</small></span></label>
         <label class="check-card"><input id="exportImages" type="checkbox" checked><span><b>照片与视觉素材</b><small>包含人物包中的本地图片文件。</small></span></label>
         <label class="check-card"><input id="exportVideo" type="checkbox" checked><span><b>生成视频</b><small>可单独排除视频文件和视频验收记录。</small></span></label>
-        <label class="check-card"><input id="exportCalls" type="checkbox"><span><b>实时通话历史</b><small>包含通话摘要和逐轮文字，不包含 API Key。</small></span></label>
+        <label class="check-card"><input id="exportCalls" type="checkbox"><span><b>实时通话历史</b><small>包含通话摘要和逐轮文字。取消后也不导出回复诊断副本和合成音频；原始录音由音频选项控制。</small></span></label>
       </div>
       <div class="form-actions"><button type="button" class="secondary" data-action="cancel-package-export">取消</button><button type="button" class="primary" data-action="confirm-package-export">生成并下载人物包</button></div>
     </form>
@@ -380,7 +425,7 @@
           <fieldset class="full"><legend>数据授权（可随时关闭）</legend><div id="providerConsentChecks" class="language-switch"></div></fieldset>
           <label>每日预算上限<input id="providerDailyBudget" type="number" min="0" step="0.01" value="0"><small>0 表示不设上限</small></label>
           <label>每月预算上限<input id="providerMonthlyBudget" type="number" min="0" step="0.01" value="0"><small>0 表示不设上限</small></label>
-          <label class="full">高级配置（JSON，可覆盖 MiniMax 端点）<textarea id="providerAdvancedConfig" rows="3" placeholder='{"endpoints":{"tts":"/t2a_v2"}}'></textarea></label>
+          <label class="full">高级配置（JSON，可覆盖 MiniMax 端点）<textarea id="providerAdvancedConfig" rows="3" placeholder='{"endpoints":{"tts":"/t2a_v2"}}'></textarea><small>cost_estimates 按单次人民币金额填写。大陆 MiniMax 声音复刻默认估算9.90元；国际站或其他服务须填写复刻估价。估算不等于实际账单，合成试听另计。</small></label>
         </div><div id="providerResult" class="method-note"></div><div class="form-actions"><button type="button" class="secondary" data-action="test-provider-connection">测试并读取模型</button><button type="button" class="primary" data-action="save-provider-connection">保存服务连接</button></div></section>
         <section class="connection-editor"><div class="section-subhead"><div><span>CAPABILITY ROUTING</span><h3>能力路由与自动降级</h3></div><small>为每项能力选择主连接、备用连接和模型；运行时真正按这里执行。</small></div><label>路由作用范围<select id="capabilityRouteScope"><option value="global">所有数字人（全局）</option><option value="avatar">当前数字人</option></select></label><div id="capabilityRouteList"></div></section>
       </section>
@@ -444,16 +489,19 @@
     </form>
   </dialog>
   <dialog id="reviewDialog" class="wide-dialog">
-    <form method="dialog" class="dialog-card"><button class="dialog-close" aria-label="关闭">×</button><span class="panel-kicker">构建前检查</span><h2 id="reviewDialogTitle">确认说话人与内容</h2><p id="reviewDialogLead">选择哪些名字代表数字人原型，并取消勾选不希望用于人格与记忆的内容。</p><div id="speakerChoices" class="speaker-choices"></div><label id="fictionalApplyModeLabel" class="hidden">写入方式<select id="fictionalApplyMode"><option value="merge">合并到现有设定（推荐）</option><option value="replace">覆盖现有设定</option></select></label><div class="review-heading"><b>解析内容</b><small id="reviewCount"></small></div><div id="reviewRows" class="review-rows"></div><div class="form-actions"><button type="button" class="secondary" data-action="close-review">稍后处理</button><button type="button" class="primary" data-action="confirm-import">确认并用于构建</button></div></form>
+    <form method="dialog" class="dialog-card"><button class="dialog-close" aria-label="关闭">×</button><span class="panel-kicker">构建前检查</span><h2 id="reviewDialogTitle">确认说话人与内容</h2><p id="reviewDialogLead">选择哪些名字代表数字人原型，并取消勾选不希望用于人格与记忆的内容。</p><div id="speakerChoices" class="speaker-choices"></div><label id="fictionalApplyModeLabel" class="hidden">写入方式<select id="fictionalApplyMode"><option value="merge">合并到现有设定（推荐）</option><option value="replace">覆盖现有设定</option></select></label><div class="review-heading"><b>解析内容</b><small id="reviewCount"></small></div><div id="reviewRows" class="review-rows"></div><div id="manualImageTextPanel" class="hidden"></div><div class="form-actions"><button type="button" class="secondary" data-action="close-review">稍后处理</button><button type="button" class="primary" data-action="confirm-import">确认并用于构建</button></div></form>
   </dialog>
   <aside id="errorTray" class="error-tray hidden" aria-live="assertive"><div><b>操作没有完成</b><span id="errorTrayMessage"></span></div><button type="button" class="secondary" data-action="open-diagnostics">打开诊断</button><button type="button" class="ghost" data-action="dismiss-error" aria-label="关闭错误提示">×</button></aside>
   <div id="toast" class="toast"></div>
   <script src="./core.js" defer></script>
   <script src="./profile.js" defer></script>
   <script src="./video-call.js" defer></script>
+  <script src="./voice-call.js?v=20261004-call-record" defer></script>
   <script src="./settings.js" defer></script>
   <script src="./imports.js" defer></script>
+  <script src="./maintenance.js" defer></script>
   <script src="./app.js" defer></script>
   <script src="./chat.js" defer></script>
+  <script src="./chat-composer.js" defer></script>
 </body>
 </html>

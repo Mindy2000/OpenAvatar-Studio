@@ -74,7 +74,7 @@ def runtime_state(db: Database, avatar_id: str) -> dict[str, Any]:
         (avatar_id,),
     )
     conflicts = db.all(
-        "SELECT id,fact_key,reason,status,review_note,created_at,resolved_at FROM world_conflicts WHERE avatar_id=? ORDER BY id DESC LIMIT 50",
+        "SELECT id,fact_key,existing_value_json,candidate_value_json,reason,status,review_note,created_at,resolved_at FROM world_conflicts WHERE avatar_id=? ORDER BY id DESC LIMIT 50",
         (avatar_id,),
     )
     for row in facts:
@@ -272,13 +272,21 @@ def resolve_conflict(db: Database, avatar_id: str, conflict_id: int, action: str
         raise ValueError("冲突处理动作不合法")
     now = int(time.time())
     if action == "accept_candidate":
+        existing = db.one(
+            "SELECT mutability FROM world_facts WHERE avatar_id=? AND fact_key=? AND active=1",
+            (avatar_id, row["fact_key"]),
+        )
+        # A conflict candidate always needs explicit review, including new or evolving facts.
+        mutability = str((existing or {}).get("mutability", "approval_only"))
+        if mutability not in {"locked", "approval_only"}:
+            mutability = "approval_only"
         propose_fact(
             db,
             avatar_id,
             fact_key=str(row["fact_key"]),
             value=_loads(str(row["candidate_value_json"]), None),
             reality_kind="fictional_runtime",
-            mutability="evolving",
+            mutability=mutability,
             reason="用户接受冲突候选值",
         )
     db.execute(

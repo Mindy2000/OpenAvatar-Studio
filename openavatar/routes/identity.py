@@ -240,6 +240,18 @@ def create_identity_router(context: ApplicationContext) -> APIRouter:
         rows = db.all("SELECT speaker,content FROM memories WHERE avatar_id=? AND is_avatar=1 ORDER BY id LIMIT 100000", (avatar_id,))
         if not rows:
             rows = db.all("SELECT speaker,content FROM memories WHERE avatar_id=? ORDER BY id LIMIT 100000", (avatar_id,))
+        if str(avatar["subject_kind"]) == "fictional":
+            answers = db.all(
+                """SELECT b.question_text,b.answer FROM builder_answers b
+                   JOIN world_modules w ON w.avatar_id=b.avatar_id AND w.module_key=b.question_key
+                   WHERE b.avatar_id=? AND b.route='fictional_guided' AND (w.enabled=1 OR w.required=1)
+                   ORDER BY w.required DESC,b.id""",
+                (avatar_id,),
+            )
+            rows = [
+                {"speaker": item["question_text"], "content": item["answer"]}
+                for item in answers
+            ] + rows
         update_job(db, job["id"], progress=45, stage="正在提取人格和说话方式")
         profile = build_profile(rows, str(avatar["name"]), model_client(db, selected, avatar_id))
         now = int(time.time())

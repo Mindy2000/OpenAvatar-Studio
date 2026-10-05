@@ -170,7 +170,7 @@ def search_records(
             })
     if layer in {"all", "runtime"}:
         rows = db.all(
-            f"SELECT * FROM messages WHERE avatar_id=? AND {_message_filter(timeline_kind)} ORDER BY id DESC",
+            f"SELECT * FROM messages WHERE avatar_id=? AND {_message_filter(timeline_kind)} AND channel<>'voice_call' ORDER BY id DESC",
             (avatar_id,),
         )
         for row in rows:

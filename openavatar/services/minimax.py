@@ -150,7 +150,11 @@ class MiniMaxClient:
         file_id = str(((uploaded.get("file") or {}).get("file_id") if isinstance(uploaded.get("file"), dict) else "") or uploaded.get("file_id") or "")
         if not file_id:
             raise MiniMaxError("MiniMax 上传成功但未返回 file_id")
-        payload = {"file_id": file_id, "voice_id": voice_id, "model": model, **(config or {}).get("request", {})}
+        try:
+            numeric_file_id = int(file_id)
+        except ValueError as exc:
+            raise MiniMaxError("MiniMax 上传返回的 file_id 格式不正确") from exc
+        payload = {**(config or {}).get("request", {}), "file_id": numeric_file_id, "voice_id": voice_id, "model": model}
         result = self._request("voice_clone", payload)
         return {"voice_id": voice_id, "file_id": file_id, "raw": result}
 

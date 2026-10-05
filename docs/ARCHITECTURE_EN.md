@@ -26,6 +26,9 @@ FastAPI serves local HTTP APIs, streaming chat, WebSockets, and a static fronten
 | `runtime.py`, `events.py` | Run IDs, cancellation, metrics, leases, Supervisor, events, and Outbox |
 | `static/core.js`, `profile.js`, `settings.js` | Page foundations, studio, and settings |
 | `static/imports.js`, `chat.js`, `video-call.js`, `app.js` | Imports, chat, LiveKit, and event wiring |
+| `routes/chat_media.py`, `services/chat_vision.py` | Chat attachments, avatar/timeline validation, pixel-based image understanding and successful-result caching; failed image requests require a manual retry |
+| `routes/calls.py`, `static/voice-call.js` | Browser recognition, text WebSocket, TTS, interruption and call records |
+| `static/chat-composer.js`, `static/maintenance.js` | Attachment interactions, memory editing, merges and revision history |
 | `i18n/` | Chinese/English UI catalogs for static text, dynamic notices, and system messages; template parameters preserve user content |
 
 ## Data and timelines
@@ -36,7 +39,9 @@ Migration and pre-restore backups use SQLite backup facilities. Packages include
 
 ## Providers and media
 
-`provider_connections` and `capability_routes` store providers, capabilities, consent, budgets, and routes. Connection IDs map dedicated keys to the OS store. Legacy `model_connections` and cloud settings remain supported. Avatar routes can override global choices; candidate providers support fallback.
+`provider_connections` and `capability_routes` store providers, capabilities, consent, budgets, and routes. Connection IDs map dedicated keys to the OS store. Legacy `model_connections` and cloud settings remain supported. Avatar routes can override global choices. Candidates are filtered by enabled state, data consent and estimated budget; each consumer decides whether to try fallback candidates. Current chat image understanding uses only the first available candidate, retains the image on failure and requires a manual retry rather than silently switching providers.
+
+Voice-cloning capability routes call `prepare_voice_clone_cost` before upload to validate the per-call CNY estimate and remaining daily/monthly budgets. A configured but unavailable cloning route does not fall back to a legacy connection. With no cloning route configured, `routes/media_runtime.py` retains a legacy Aliyun path without equivalent estimate validation or budget preflight. These checks are neither atomic reservations for concurrent calls nor hard limits on provider bills.
 
 MiniMax, Aliyun, and OpenRouter differ in capabilities. Video adapters consume continuity reference contracts rather than a universal fixed primary/fallback order. Background workers poll/download results, FFmpeg extracts keyframes, and review determines retry or manual acceptance. Keyframes never automatically become canonical identity references.
 
@@ -58,3 +63,9 @@ The running `/docs` and `/openapi.json` provide the full API. Standard launchers
 [Privacy](PRIVACY_EN.md) documents loopback validation and local model network restrictions, automatic OCR, estimated budgets, connection tests, logs, and deletion scope. Local model requests bypass proxies and reject redirects; the other documented limitations remain unchanged.
 
 Repository templates are synchronized copies of runtime definitions; update both together. Blank templates contain no demo avatars. See [Contributing](../CONTRIBUTING_EN.md) for documentation checks.
+
+## New chat modules and verification boundaries (updated 2026-10-05)
+
+chat_media.py and chat-composer.js implement attachments, locations, favorites, mirrored capture, and release-to-send voice notes. chat_vision.py validates image ownership/timeline, sends pixels, and caches descriptions and capped replies. voice-call.js combines browser recognition, the text WebSocket gateway, TTS, and local microphone/interim-result interruption. maintenance.js adds memory merges and revisions.
+
+Call transcripts use voice_call: listings and history hide them while model preparation includes them. When call-history export is disabled, the package excludes their messages, cards, sessions/turns, reply diagnostics, and synthesized audio without reliable provenance. ChatService enforces 80 characters for ordinary and streamed replies, including preview. Chinese/English UI and dynamic-label checks passed on 2026-10-05. Full cloud interruption and continuation, and the combined mirrored-camera, send, and image-understanding flow passed in the current Mac acceptance environment; this does not establish acceptance on other devices, browsers, noisy speaker setups, or every provider.

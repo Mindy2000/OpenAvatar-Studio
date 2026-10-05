@@ -76,10 +76,23 @@ async def proactive_tick(
                 f"这是用户主动开启的本地主动联系功能。语气：{rules['tone']}。"
                 f"主题范围：{', '.join(rules['topic_scope'])}。{memory_context}。写一条自然、简短、不虚构新事实的问候。"
         )
+        local_clock = time.strftime("%Y-%m-%d %H:%M %Z", time.localtime(now))
+        constraints = (
+            f"本机当前时间：{local_clock}。按此时间选择问候，不能在晚上说早安。"
+            "没有实时天气、位置、课程表或用户当前活动信息，不得声称知道这些情况；"
+            "不要编造冷热、晴雨或正在发生的事。可以表达关心或询问近况。"
+            "只输出问候正文，最多80字。"
+        )
         try:
-            content = await asyncio.to_thread(client.chat, [{"role": "user", "content": prompt}])
+            content = await asyncio.to_thread(client.chat, [
+                {"role": "system", "content": constraints},
+                {"role": "user", "content": prompt},
+            ])
         except (LocalModelError, ProviderError):
             continue
+        if not content:
+            continue
+        content = content.strip()[:80]
         if not content:
             continue
         db.execute(

@@ -43,6 +43,7 @@ def create_call_router(*, db: Database, runs: RunRegistry, chat: ChatService) ->
                 ),
             ),
         )
+        call_started_at = int(time.time())
         current_task: asyncio.Task[None] | None = None
         current_run_id = ""
 
@@ -52,6 +53,7 @@ def create_call_router(*, db: Database, runs: RunRegistry, chat: ChatService) ->
             first_text_ms = 0
             try:
                 prepared = await asyncio.to_thread(chat.prepare, avatar_id, text, False)
+                prepared["channel"] = "voice_call"
                 client = prepared["client"]
                 stream_method = getattr(client, "stream_chat", None)
                 iterator = iter(
@@ -64,13 +66,16 @@ def create_call_router(*, db: Database, runs: RunRegistry, chat: ChatService) ->
                     chunk = await asyncio.to_thread(next, iterator, sentinel)
                     if chunk is sentinel:
                         break
-                    value = str(chunk)
+                    remaining = 80 - sum(len(part) for part in parts)
+                    value = str(chunk)[:remaining]
                     if not value:
                         continue
                     if not parts:
                         first_text_ms = round((time.perf_counter() - started) * 1000)
                     parts.append(value)
                     await websocket.send_json({"type": "assistant.delta", "run_id": run_id, "text": value})
+                    if len(value) >= remaining:
+                        break
                 if cancelled.is_set():
                     await websocket.send_json({"type": "assistant.interrupted", "run_id": run_id})
                     return
@@ -108,6 +113,14 @@ def create_call_router(*, db: Database, runs: RunRegistry, chat: ChatService) ->
                 await websocket.send_json(
                     {"type": "call.error", "run_id": run_id, "error": str(detail), "fatal": False}
                 )
+            except asyncio.CancelledError:
+                # Do not wait for a blocking provider read before accepting the
+                # next utterance. The cancelled task must never persist a reply.
+                try:
+                    await websocket.send_json({"type": "assistant.interrupted", "run_id": run_id})
+                except (RuntimeError, WebSocketDisconnect):
+                    pass
+                raise
             finally:
                 runs.finish(run_id)
 
@@ -121,7 +134,7 @@ def create_call_router(*, db: Database, runs: RunRegistry, chat: ChatService) ->
                     break
                 if message.get("bytes") is not None:
                     await websocket.send_json(
-                        {"type": "call.error", "error": "尚未配置实时 ASR Provider；请发送 user.text", "fatal": False}
+                        {"type": "call.error", "error": "此接口不接收原始音频；请使用页面的浏览器语音识别模式或发送 user.text", "fatal": False}
                     )
                     continue
                 raw = message.get("text") or ""
@@ -141,12 +154,16 @@ def create_call_router(*, db: Database, runs: RunRegistry, chat: ChatService) ->
                     if current_run_id:
                         runs.cancel(current_run_id, avatar_id)
                     if current_task:
+                        current_task.cancel()
                         await asyncio.gather(current_task, return_exceptions=True)
                     current_run_id, cancel_event = runs.start(avatar_id, "realtime-call")
                     current_task = asyncio.create_task(answer(text, current_run_id, cancel_event))
-                    await websocket.send_json({"type": "user.committed", "run_id": current_run_id, "text": text})
+                    await websocket.send_json({"type": "user.committed", "run_id": current_run_id, "text": text,
+                                               "client_turn_id": str(body.get("client_turn_id") or "")[:100]})
                 elif event_type == "call.interrupt" and current_run_id:
                     await asyncio.to_thread(runs.cancel, current_run_id, avatar_id)
+                    if current_task:
+                        current_task.cancel()
                 elif event_type == "call.end":
                     break
                 elif event_type == "ping":
@@ -157,10 +174,14 @@ def create_call_router(*, db: Database, runs: RunRegistry, chat: ChatService) ->
             if current_run_id:
                 runs.cancel(current_run_id, avatar_id)
             if current_task:
+                current_task.cancel()
                 await asyncio.gather(current_task, return_exceptions=True)
             db.execute(
                 "UPDATE realtime_call_sessions SET status='completed',ended_at=? WHERE id=?",
                 (int(time.time()), call_id),
             )
+            duration = max(0, int(time.time()) - call_started_at)
+            db.execute("INSERT INTO messages(avatar_id,role,content,channel,created_at,message_kind,attachment_json) VALUES(?,?,?,?,?,?,?)",
+                (avatar_id, "system", f"语音通话 {duration // 60:02d}:{duration % 60:02d}", "chat", int(time.time()), "call", json.dumps({"duration": duration, "call_id": call_id})))
 
     return router

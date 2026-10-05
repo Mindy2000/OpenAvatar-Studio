@@ -8,6 +8,10 @@ async function openImportReview(importId) {
 function renderImportReview() {
   const { preview } = state.currentImport;
   const fictional = preview.import.category === "fictional";
+  const editableImage = preview.import.category === "image" && preview.import.status !== "confirmed";
+  $('[data-action="confirm-import"]').disabled = editableImage && preview.total === 0;
+  $("#manualImageTextPanel").classList.toggle("hidden", !editableImage);
+  $("#manualImageTextPanel").innerHTML = editableImage ? `<label>${ui("补录或校正图片文字", "Add or correct image text")}<textarea id="manualImageText" rows="5">${escapeHtml(preview.rows.map(row => row.content).join("\n"))}</textarea></label><button type="button" class="secondary" data-action="save-image-text">${ui("保存图片文字", "Save image text")}</button>` : "";
   $("#reviewDialogTitle").textContent = fictional ? tr("预览并确认角色设定") : tr("确认说话人与内容");
   $("#reviewDialogLead").textContent = fictional ? tr("文件尚未写入人物档案。检查解析结果，并选择合并或覆盖后再确认。") : tr("选择哪些名字代表数字人原型，并取消勾选不希望用于人格与记忆的内容。");
   $("#fictionalApplyModeLabel").classList.toggle("hidden", !fictional);

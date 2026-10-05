@@ -85,9 +85,22 @@ def checks_for_avatar(db: Database, avatar_id: str) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     if subject_kind == "fictional":
         ensure_modules(db, avatar_id)
-        source_text = "\n\n".join(
-            f"## {row['title']}\n{row['content']}" for row in evidence if row["source_type"] in {"fictional_source", "guided_builder"}
-        )[:120000]
+        # Guided question titles are localized prose, not document section names.
+        # Use stable module keys and current answers so revisions cannot leave
+        # superseded answers satisfying the checks.
+        guided = db.all(
+            "SELECT ba.question_key,ba.answer FROM builder_answers ba "
+            "JOIN world_modules wm ON wm.avatar_id=ba.avatar_id AND wm.module_key=ba.question_key "
+            "WHERE ba.avatar_id=? AND ba.route='fictional_guided' AND (wm.enabled=1 OR wm.required=1)",
+            (avatar_id,),
+        )
+        source_parts = [
+            f"## {row['title']}\n{row['content']}" for row in evidence if row["source_type"] == "fictional_source"
+        ]
+        source_parts.extend(
+            f"## {row['question_key']}\n{row['answer']}" for row in guided if str(row['answer']).strip()
+        )
+        source_text = "\n\n".join(source_parts)[:120000]
         checks.extend(checks_for_fictional_source(source_text) if source_text else [{
             "name": "虚构设定文件",
             "passed": False,

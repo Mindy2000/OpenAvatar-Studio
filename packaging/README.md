@@ -13,7 +13,7 @@ python -m pip install -r requirements-packaging.txt
 python scripts/build_desktop.py --dry-run
 python scripts/build_desktop.py
 python scripts/collect_release_licenses.py
-python scripts/package_release.py --version v0.1.0
+python scripts/package_release.py --version v0.1.0-rc.5
 ```
 
 `build_desktop.py` 从 `openavatar/desktop.py` 构建，包含静态资源、语言资源、模板、项目 LICENSE 与凭据库组件。输出在 `dist/`，中间文件在 `build/`，`.spec` 为可再生成文件。`package_release.py` 产生 `release/` 下的 ZIP 和 SHA-256 文件；可用 `--platform macos|windows|linux` 显式选择已有产物类型，这不会跨平台编译。

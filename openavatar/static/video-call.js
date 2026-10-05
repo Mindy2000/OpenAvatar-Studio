@@ -1,4 +1,5 @@
 function selectTab(tab) {
+  if (tab !== "chat" && typeof endVoiceCall === "function") endVoiceCall();
   $$(".studio-sidebar nav button").forEach(node => node.classList.toggle("active", node.dataset.tab === tab));
   $$(".tab-panel").forEach(node => node.classList.add("hidden"));
   $(`#${tab}Tab`).classList.remove("hidden");
@@ -307,5 +308,4 @@ function listenVideoTurn() {
   recognition.start();
   $("#videoTurnStatus").textContent = tr("正在听，请自然说话…");
 }
-
 

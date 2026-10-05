@@ -212,7 +212,7 @@ def create_avatars_router(context: ApplicationContext) -> APIRouter:
             fields.append("updated_at=?")
             params.extend([int(time.time()), avatar_id])
             db.execute(f"UPDATE avatars SET {', '.join(fields)} WHERE id=?", tuple(params))
+            build_persona_core(db, avatar_id)
         return public_avatar(require_avatar(db, avatar_id))
 
     return router
-

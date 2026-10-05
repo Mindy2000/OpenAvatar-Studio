@@ -96,6 +96,7 @@ async function loadBuildPanels() {
       ${(visual.length ? visual.slice(0, 8) : [{ label: tr("暂无视觉候选"), status: "draft", asset_kind: "identity" }]).map(item => visualAssetRow(item)).join("")}</article>
     ${continuityBuildPanel(assetSets, scenes, continuityRuns)}
     <article class="build-panel"><header><span>VOICE CHOICE</span><b>${voices.length}</b></header>
+      <p>${tr("MiniMax 预置音色无需声音样本。先配置语音合成路由，再选择音色；播放时确认费用。")}</p>
       <p><strong>${escapeHtml(voiceDisplayName(activeVoice) || tr("待用户选择"))}</strong><small>${escapeHtml(activeVoice.provider || "user_choice")} · ${escapeHtml(activeVoice.profile_kind || "synthetic_or_api")}</small></p>
       ${voices.map(item => voiceProfileRow(item)).join("") || devVoices.map(item => `<p><strong>${systemHtml(item.voice_name)}</strong><small>${escapeHtml(item.provider)} · ${escapeHtml(item.profile_kind)}</small></p>`).join("")}</article>
     ${voiceCloneFlowPanel(checks, voices, transcripts, jobs)}
@@ -251,6 +252,8 @@ async function loadProviderHub() {
   renderProviderEditor(editing || null);
   renderProviderConnections();
   renderCapabilityRoutes();
+  fillConnectionSelect($("#wizardConnectionSelect"), state.selectedConnectionId);
+  renderConnectionHint("#wizardConnectionHint", $("#wizardConnectionSelect")?.value);
   return data;
 }
 
@@ -373,7 +376,8 @@ function ocrPayload() {
 }
 
 async function loadModelConnections() {
-  const data = await api("/api/model-connections");
+  const [data, hub] = await Promise.all([api("/api/model-connections"), api("/api/provider-hub")]);
+  state.providerHub = hub;
   state.modelConnections = data.connections || [];
   state.selectedConnectionId = data.selected_connection_id || "";
   renderConnectionList();
@@ -389,14 +393,31 @@ function connectionTypeName(type) {
 
 function fillConnectionSelect(select, selectedId = "") {
   if (!select) return;
+  const route = wizardChatRoute();
+  if (select.id === "wizardConnectionSelect" && route) {
+    select.innerHTML = `<option value="__capability_route__">${tr("服务与能力路由")} · ${tr("对话")}</option>`;
+    return;
+  }
   select.innerHTML = state.modelConnections.length
     ? state.modelConnections.map(item => `<option value="${escapeHtml(item.id)}" ${item.id === selectedId ? "selected" : ""}>${escapeHtml(item.display_name)} · ${escapeHtml(connectionTypeName(item.connection_type))} · ${escapeHtml(item.model)}</option>`).join("")
     : tr`<option value="">还没有模型连接</option>`;
 }
 
+function wizardChatRoute() {
+  const routes = state.providerHub?.routes || [];
+  return routes.find(item => item.capability === "chat" && item.scope_type === "avatar" && item.avatar_id === state.currentId)
+    || routes.find(item => item.capability === "chat" && item.scope_type === "global");
+}
+
 function renderConnectionHint(selector, connectionId) {
   const node = $(selector);
   if (!node) return;
+  if (connectionId === "__capability_route__") {
+    const route = wizardChatRoute();
+    const service = state.providerHub?.connections.find(item => item.id === route?.primary_connection_id);
+    node.textContent = [tr("服务与能力路由"), service?.display_name, route?.model || service?.models?.chat].filter(Boolean).join(" · ");
+    return;
+  }
   const item = state.modelConnections.find(row => row.id === connectionId);
   node.innerHTML = item ? `<b>${escapeHtml(item.display_name)}</b><span>${escapeHtml(item.base_url)} · ${escapeHtml(item.provider_name)} · ${item.has_api_key ? tr("Key 已保存在系统凭据库") : tr("本地免 Key 或尚未保存 Key")}</span>` : tr`<b>还没有模型连接</b><span>请先在全局 AI 设置中新建一个云端或本地连接。</span>`;
 }

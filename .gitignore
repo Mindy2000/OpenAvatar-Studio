@@ -24,6 +24,9 @@ data/backups/
 output/
 build/
 dist/
+# Local acceptance rebuilds and preserved desktop bundles are not source files.
+/build-*/
+/dist-*/
 release/
 *.spec
 _local/

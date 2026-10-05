@@ -195,7 +195,7 @@ async function setInterfaceLanguage(language) {
     }
     await loadModelConnections();
     await loadOcrConnections();
-    if (state.current) {
+    if (state.current && state.currentId) {
       renderReadinessBanner();
       renderProfile();
       if (state.guided) {
@@ -211,6 +211,7 @@ async function setInterfaceLanguage(language) {
       await loadVideoCallStatus();
       await loadEvidence();
     }
+    if (typeof refreshChatLanguage === "function") await refreshChatLanguage();
     if (state.lastEvaluation) renderEvaluation(state.lastEvaluation.result, state.lastEvaluation.kind);
     if (state.packageInfo) renderPackagePreview(state.packageInfo);
     if (state.currentImport) renderImportReview();
@@ -254,6 +255,7 @@ function showFilePreviewNotice() {
 }
 
 function showView(id) {
+  if (id !== "#studioView" && typeof endVoiceCall === "function") endVoiceCall();
   $$(".view").forEach(node => node.classList.add("hidden"));
   $(id).classList.remove("hidden");
 }
@@ -396,11 +398,14 @@ function escapeHtml(value = "") {
 }
 
 async function openAvatar(id) {
+  if (typeof resetChatComposer === "function") resetChatComposer();
+  if (typeof endVoiceCall === "function") endVoiceCall();
   state.lastEvaluation = null;
   state.currentImport = null;
   $("#evaluationResult").innerHTML = "";
   state.currentId = id;
   state.current = await api(`/api/avatars/${id}`);
+  if (typeof refreshChatHeader === "function") refreshChatHeader();
   setCreationMode(state.current.subject_kind === "fictional" ? "fictional" : "real");
   state.previewMode = !state.current.readiness?.can_start_official;
   $("#studioName").textContent = state.current.name;
@@ -413,5 +418,5 @@ async function openAvatar(id) {
   await loadMessages();
   selectTab("chat");
   showView("#studioView");
+  if (typeof fitConversationHeight === "function") requestAnimationFrame(fitConversationHeight);
 }
-

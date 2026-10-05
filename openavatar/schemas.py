@@ -43,6 +43,7 @@ class PersonaUpdate(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    source_message_id: int = Field(default=0, ge=0)
     message: str = Field(min_length=1, max_length=10000)
     preview_mode: bool = False
 
@@ -77,6 +78,10 @@ class ImportConfirm(BaseModel):
     avatar_speakers: list[str] = Field(default_factory=list, max_length=100)
     excluded_row_ids: list[int] = Field(default_factory=list, max_length=100000)
     apply_mode: Literal["merge", "replace"] = "merge"
+
+
+class ManualImageText(BaseModel):
+    text: str = Field(min_length=1, max_length=100000)
 
 
 class ModelSettings(BaseModel):

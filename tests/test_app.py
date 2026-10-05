@@ -68,6 +68,38 @@ def test_health_is_local_only(tmp_path: Path):
         assert payload["runtime_mode"] == "local"
 
 
+def test_readiness_uses_capability_route_without_legacy_connection(tmp_path: Path):
+    from openavatar.services.readiness import completion_report
+
+    with make_client(tmp_path) as client:
+        avatar = create_avatar(client, subject_kind="fictional")
+        payload = {
+            "display_name": "Routed chat", "provider_kind": "minimax",
+            "base_url": "https://api.example.com/v1", "api_key": "test-only",
+            "capabilities": ["chat"], "models": {"chat": "test-chat"},
+            "consent": {"text": True},
+        }
+        connection = client.post("/api/provider-connections", json=payload).json()
+        response = client.put("/api/capability-routes", json={
+            "capability": "chat", "primary_connection_id": connection["id"],
+        })
+        assert response.status_code == 200
+        db = Database(tmp_path / "test.sqlite")
+
+        def model_ready():
+            return next(item["passed"] for item in completion_report(db, avatar["id"])["checks"] if item["name"] == "模型设置")
+
+        assert model_ready()
+        # An explicitly configured route must not fall through to legacy settings.
+        payload["consent"] = {"text": False}
+        assert client.put(f"/api/provider-connections/{connection['id']}", json=payload).status_code == 200
+        assert not model_ready()
+        payload["consent"] = {"text": True}
+        payload["enabled"] = False
+        client.put(f"/api/provider-connections/{connection['id']}", json=payload)
+        assert not model_ready()
+
+
 def test_desktop_runtime_and_free_packaging_command(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("OPENAVATAR_DATA_DIR", str(tmp_path / "desktop-data"))
     assert default_desktop_data_dir() == (tmp_path / "desktop-data").resolve()
@@ -1011,6 +1043,38 @@ def test_guided_builder_records_evidence_and_world_proposal(tmp_path: Path):
         assert any(row["fact_key"] == "identity.guided_profile" for row in proposals)
 
 
+def test_guided_analysis_uses_latest_answers_without_chat_history(tmp_path: Path, monkeypatch):
+    import openavatar.routes.identity as identity_routes
+
+    prompts = []
+
+    class ProfileProvider:
+        def available(self):
+            return True
+
+        def chat(self, messages, **kwargs):
+            prompts.append(messages[0]["content"])
+            return json.dumps({"summary": "A fictional bookshop owner", "traits": ["curious"], "speaking_style": "Brief", "boundaries": "Fictional only"})
+
+    monkeypatch.setattr(identity_routes, "model_client", lambda *_args: ProfileProvider())
+    with make_client(tmp_path) as client:
+        avatar = create_avatar(client, subject_kind="fictional")
+        endpoint = f"/api/avatars/{avatar['id']}"
+        for answer in ("OLD_ROLE", "CURRENT_BOOKSHOP_OWNER"):
+            response = client.post(endpoint + "/guided-builder/answers", json={"question_key": "identity", "answer": answer})
+            assert response.status_code == 200
+        client.post(endpoint + "/guided-builder/answers", json={"question_key": "world_overview", "answer": "DISABLED_WORLD"})
+        client.patch(endpoint + "/guided-builder/modules/world_overview", json={"enabled": False})
+        result = client.post(endpoint + "/analyze")
+        assert result.status_code == 200
+        assert result.json()["method"] == "model_assisted"
+        assert result.json()["source_count"] == 1
+        assert len(prompts) == 1
+        assert "CURRENT_BOOKSHOP_OWNER" in prompts[0]
+        assert "OLD_ROLE" not in prompts[0]
+        assert "DISABLED_WORLD" not in prompts[0]
+
+
 def test_i18n_avatar_language_and_world_region_runtime(tmp_path: Path):
     with make_client(tmp_path) as client:
         english = client.get("/api/i18n/en-US").json()
@@ -1482,6 +1546,66 @@ def test_cloned_speech_requires_confirmation_and_returns_audio(tmp_path: Path, m
         assert response.headers["content-type"].startswith("audio/mpeg")
 
 
+def test_minimax_preset_voice_uses_selected_profile_and_requires_route_consent(tmp_path: Path, monkeypatch):
+    calls = []
+
+    class FakeMiniMax:
+        def __init__(self, key, base_url, **kwargs):
+            assert key == "tts-test-key"
+
+        def synthesize(self, text, **options):
+            calls.append((text, options["voice_id"]))
+            return {"audio": b"ID3-test".hex()}
+
+    monkeypatch.setattr(archive_routes, "MiniMaxClient", FakeMiniMax)
+    with make_client(tmp_path) as client:
+        avatar = create_avatar(client, subject_kind="fictional")
+        base = f"/api/avatars/{avatar['id']}"
+        voices = client.get(base + "/voice-profiles").json()
+        assert len(client.get(base + "/voice-profiles").json()) == len(voices)
+        preset = next(v for v in voices if v["voice_id"] == "female-chengshu")
+        assert not preset["active"]
+        client.post(base + f"/voice-profiles/{preset['id']}/select")
+        connection_payload = {"display_name": "MiniMax test", "provider_kind": "minimax", "api_key": "tts-test-key", "capabilities": ["tts"], "consent": {"text": True}}
+        connection = client.post("/api/provider-connections", json=connection_payload).json()
+        request = {"text": "你好", "confirm_billable_call": True}
+        assert client.post(base + "/speech", json=request).status_code == 400
+        client.put("/api/capability-routes", json={"capability": "tts", "primary_connection_id": connection["id"]})
+        assert client.post(base + "/speech", json={"text": "你好"}).status_code == 400
+        response = client.post(base + "/speech", json=request)
+        assert response.status_code == 200, response.text
+        assert response.content == b"ID3-test"
+        assert calls == [("你好", "female-chengshu")]
+        assert not client.app.state.db.all("SELECT * FROM provider_assets WHERE avatar_id=?", (avatar["id"],))
+        connection_payload["consent"] = {"text": False}
+        client.put(f"/api/provider-connections/{connection['id']}", json=connection_payload)
+        assert client.post(base + "/speech", json=request).status_code == 400
+        assert len(calls) == 1
+
+
+def test_minimax_requests_separate_reasoning_for_json_and_stream(monkeypatch):
+    import io
+
+    requests = []
+
+    def respond(self, request, **kwargs):
+        body = json.loads(request.data)
+        requests.append(body)
+        if body["stream"]:
+            chunks = [{"choices": [{"delta": {"reasoning_content": "not-avatar-dialogue"}}]}, {"choices": [{"delta": {"content": "你好"}}]}]
+            return io.BytesIO(("\n".join("data: " + json.dumps(c) for c in chunks) + "\ndata: [DONE]\n").encode())
+        return io.BytesIO(json.dumps({"choices": [{"message": {"content": '{"summary":"你好"}', "reasoning_content": "not-persona-data"}}]}).encode())
+
+    monkeypatch.setattr(OpenAICompatibleClient, "_open", respond)
+    provider = OpenAICompatibleClient("https://api.minimaxi.com/v1", "MiniMax-M2.7", "test")
+    assert json.loads(provider.chat([{"role": "user", "content": "test"}], json_mode=True))["summary"] == "你好"
+    assert "".join(provider.stream_chat([{"role": "user", "content": "test"}])) == "你好"
+    assert all(r["reasoning_split"] is True for r in requests)
+    other = OpenAICompatibleClient("https://example.com/v1", "other", "test")
+    other.chat([])
+    assert "reasoning_split" not in requests[-1]
+
+
 def test_aliyun_http_result_url_is_upgraded_to_https(tmp_path: Path, monkeypatch):
     from openavatar.services import aliyun as aliyun_module
 
@@ -1546,3 +1670,91 @@ def test_openrouter_video_uses_frame_images_and_rejects_untrusted_poll_url(monke
         assert "不受信任" in str(exc)
     else:
         raise AssertionError("untrusted polling URL was accepted")
+
+
+def test_edited_persona_and_relationship_refresh_chat_core(tmp_path: Path):
+    with make_client(tmp_path) as client:
+        avatar = create_avatar(client, subject_kind="fictional")
+        base = f"/api/avatars/{avatar['id']}"
+        client.post(base + "/persona-core/rebuild")
+        profile = {"summary": "测试角色，21岁，大三学生", "traits": ["温柔"],
+                   "speaking_style": "每次最多80字", "boundaries": "原创成年虚构角色"}
+        assert client.put(base + "/persona", json=profile).status_code == 200
+        assert client.patch(base, json={"relationship": "恋人"}).status_code == 200
+        core = client.get(base + "/persona-core").json()["core"]
+        assert core["persona"] == profile
+        assert core["identity"]["relationship"] == "恋人"
+
+
+def test_revised_guided_answer_approval_applies_latest_value(tmp_path: Path):
+    with make_client(tmp_path) as client:
+        avatar = create_avatar(client, subject_kind="fictional")
+        base = f"/api/avatars/{avatar['id']}"
+        client.post(base + "/persona-core/rebuild")
+        for answer in ["28岁，书店店主", "21岁，大三学生"]:
+            response = client.post(base + "/guided-builder/answers", json={"question_key": "identity", "answer": answer})
+            assert response.status_code == 200
+        proposals = client.get(base + "/world/proposals").json()
+        pending = [p for p in proposals if p["fact_key"] == "identity.guided_profile" and p["status"] == "pending"]
+        assert len(pending) == 1
+        assert pending[0]["value"]["answer"] == "21岁，大三学生"
+        assert any(p["status"] == "rejected" and p["value"].get("answer") == "28岁，书店店主" for p in proposals)
+        assert client.post(base + f"/world/proposals/{pending[0]['id']}/review", json={"action": "approve"}).status_code == 200
+        core = client.get(base + "/persona-core").json()["core"]
+        fact = next(f for f in core["world_context"] if f["key"] == "identity.guided_profile")
+        assert fact["value"]["answer"] == "21岁，大三学生"
+
+
+def test_zero_proactive_daily_limit_survives_save_and_blocks_model(tmp_path: Path):
+    import asyncio
+
+    from openavatar.services.proactive_runtime import proactive_tick
+
+    with make_client(tmp_path) as client:
+        avatar = create_avatar(client, subject_kind="fictional")
+        base = f"/api/avatars/{avatar['id']}"
+        client.patch(base, json={"proactive_enabled": True})
+        response = client.put(base + "/proactive-rules", json={
+            "daily_max": 0, "allowed_windows": [], "quiet_hours": {},
+        })
+        assert response.status_code == 200
+        assert response.json()["daily_max"] == 0
+        assert client.get(base + "/proactive-rules").json()["daily_max"] == 0
+
+        def unexpected_model(*args):
+            raise AssertionError("A zero daily limit must stop before any model access")
+
+        asyncio.run(proactive_tick(
+            client.app,
+            completion_report=lambda *args: {"can_start_official": True},
+            model_client=unexpected_model,
+        ))
+        assert client.get(base + "/messages").json() == []
+
+
+def test_manual_image_text_is_scoped_and_requires_confirmation(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(import_routes, "extract_image_text", lambda *args: {"text": "", "note": "no OCR"})
+    with make_client(tmp_path) as client:
+        avatar = create_avatar(client)
+        other = create_avatar(client)
+        base = f"/api/avatars/{avatar['id']}"
+        imported = client.post(base + "/imports?category=image", content=b"fixture", headers={"X-File-Name": "fixture.png"}).json()
+        path = base + f"/imports/{imported['id']}/text"
+        assert client.put(path, json={"text": "   "}).status_code == 400
+        assert client.put(f"/api/avatars/{other['id']}/imports/{imported['id']}/text", json={"text": "wrong scope"}).status_code == 404
+        response = client.put(path, json={"text": "校园图书馆\nLibrary 2026"})
+        assert response.status_code == 200
+        assert response.json()["total"] == 2
+        assert client.get(base + "/memories").json() == []
+        assert client.post(base + f"/imports/{imported['id']}/confirm", json={}).status_code == 200
+        assert len(client.get(base + "/memories").json()) == 2
+        assert client.get(f"/api/avatars/{other['id']}/memories").json() == []
+        assert client.put(path, json={"text": "overwrite"}).status_code == 409
+
+
+def test_static_assets_do_not_reuse_previous_desktop_build(tmp_path: Path):
+    with make_client(tmp_path) as client:
+        for path in ("/", "/app.js", "/maintenance.js"):
+            response = client.get(path)
+            assert response.status_code == 200
+            assert response.headers["cache-control"] == "no-store"

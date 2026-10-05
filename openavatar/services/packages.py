@@ -123,7 +123,7 @@ def export_avatar(
         (avatar_id,),
     )
     messages = db.all(
-        "SELECT role,content,channel,created_at FROM messages WHERE avatar_id=? ORDER BY id",
+        "SELECT role,content,channel,created_at,message_kind,attachment_json,starred,media_type FROM messages WHERE avatar_id=? ORDER BY id",
         (avatar_id,),
     )
     rights = db.all(
@@ -293,6 +293,10 @@ def export_avatar(
         provider_assets = [row for row in provider_assets if str(row.get("kind")) != "video"]
         media_reviews = [row for row in media_reviews if str(row.get("media_kind")) != "video"]
     if not include_call_history:
+        messages = [row for row in messages if row.get("message_kind") != "call" and row.get("channel") != "voice_call"]
+        # Imported diagnostics can retain old message IDs, so provenance cannot
+        # reliably be reconstructed. Omit this derived cache, not normal chats.
+        decision_explanations = []
         call_sessions = []
         call_turns = []
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -328,6 +332,17 @@ def export_avatar(
         "avatar_model_settings": model_settings,
         "model_connection_hint": connection_hint,
     }
+    chat_attachment_names = set()
+    for message in messages:
+        kind = message.get("message_kind", "text")
+        allowed = include_conversations and (kind != "audio" or include_audio) and (kind != "image" or include_images) and (kind != "video" or include_video)
+        meta = json.loads(message.get("attachment_json") or "{}")
+        if allowed and meta.get("stored_name"):
+            chat_attachment_names.add(meta["stored_name"])
+        elif kind in {"image", "video", "audio", "file"}:
+            message["message_kind"] = "text"
+            message["attachment_json"] = "{}"
+            message["content"] = "[附件未包含在此导出包中]"
     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
         archive.writestr("language_profile.json", json.dumps(manifest["language_profile"], ensure_ascii=False, indent=2))
@@ -377,9 +392,12 @@ def export_avatar(
                 if path.is_file():
                     relative = path.relative_to(asset_root)
                     relative_text = str(relative).replace("\\", "/")
+                    if relative.parts and relative.parts[0] == "chat-attachments" and (not include_conversations or relative.name not in chat_attachment_names):
+                        continue
                     if relative.parts and relative.parts[0] == "imports" and relative_text not in included_asset_paths:
                         continue
-                    if relative.parts[:2] == ("generated", "audio") and not include_audio:
+                    if relative.parts[:2] == ("generated", "audio") and (not include_audio or not include_call_history):
+                        # Legacy TTS files do not distinguish calls from auditions.
                         continue
                     if relative.parts[:2] in {("generated", "images"), ("generated", "video_keyframes")} and not include_images:
                         continue
@@ -543,8 +561,9 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                 if not isinstance(row, dict) or row.get("role") not in {"user", "assistant", "system"}:
                     continue
                 connection.execute(
-                    "INSERT INTO messages(avatar_id,role,content,channel,created_at) VALUES(?,?,?,?,?)",
-                    (new_id, row["role"], str(row.get("content", ""))[:100000], str(row.get("channel", "imported"))[:50], int(row.get("created_at", now))),
+                    "INSERT INTO messages(avatar_id,role,content,channel,created_at,message_kind,attachment_json,starred,media_type) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (new_id, row["role"], str(row.get("content", ""))[:100000], str(row.get("channel", "imported"))[:50], int(row.get("created_at", now)),
+                     str(row.get("message_kind", "text"))[:30], json.dumps(json.loads(row.get("attachment_json") or "{}"), ensure_ascii=False), int(bool(row.get("starred"))), str(row.get("media_type", ""))[:100]),
                 )
             for row in optional["rights"][:10000] if isinstance(optional["rights"], list) else []:
                 if not isinstance(row, dict):
@@ -871,7 +890,7 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                     """,
                     (
                         new_id,
-                        min(max(int(proactive.get("daily_max", 2) or 2), 0), 24),
+                        min(max(int(proactive["daily_max"] if proactive.get("daily_max") is not None else 2), 0), 24),
                         str(proactive.get("allowed_windows_json", "[]"))[:20000],
                         str(proactive.get("quiet_hours_json", "{}"))[:20000],
                         str(proactive.get("topic_scope_json", "[]"))[:20000],
@@ -940,9 +959,16 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
             for row in optional["usage_events"][:50000] if isinstance(optional["usage_events"], list) else []:
                 if not isinstance(row, dict):
                     continue
+                try:
+                    usage_metadata = json.loads(str(row.get("metadata_json", "{}")))
+                except (ValueError, TypeError):
+                    usage_metadata = {}
+                if not isinstance(usage_metadata, dict):
+                    usage_metadata = {}
+                usage_metadata["imported_history"] = True
                 connection.execute(
                     "INSERT INTO usage_events(avatar_id,provider,model,role,operation,status,latency_ms,estimated_cost,metadata_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                    (new_id, str(row.get("provider", ""))[:80], str(row.get("model", ""))[:200], str(row.get("role", ""))[:80], str(row.get("operation", ""))[:80], str(row.get("status", "ok"))[:50], int(row.get("latency_ms", 0)), float(row.get("estimated_cost", 0)), str(row.get("metadata_json", "{}"))[:100000], int(row.get("created_at", now))),
+                    (new_id, str(row.get("provider", ""))[:80], str(row.get("model", ""))[:200], str(row.get("role", ""))[:80], str(row.get("operation", ""))[:80], str(row.get("status", "ok"))[:50], int(row.get("latency_ms", 0)), float(row.get("estimated_cost", 0)), json.dumps(usage_metadata, ensure_ascii=False), int(row.get("created_at", now))),
                 )
             for row in optional["media_reviews"][:50000] if isinstance(optional["media_reviews"], list) else []:
                 if not isinstance(row, dict):

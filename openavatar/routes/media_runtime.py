@@ -4,7 +4,7 @@ from openavatar.routes._shared import *
 import base64
 
 from openavatar.services.minimax import MiniMaxClient, MiniMaxError
-from openavatar.services.provider_hub import estimate_provider_cost, find_route, provider_key_name, record_provider_usage, route_candidates
+from openavatar.services.provider_hub import prepare_voice_clone_cost, estimate_provider_cost, find_route, provider_key_name, record_provider_usage, route_candidates
 from openavatar.services.continuity import (
     build_continuity_contract,
     continuity_prompt,
@@ -563,6 +563,19 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
                 raise HTTPException(502, str(exc)) from exc
         capability = "voice_clone" if job["job_type"] == "voice" else "image"
         candidates = route_candidates(db, capability, avatar_id)
+        if capability == "voice_clone" and not candidates and find_route(db, capability, avatar_id):
+            raise HTTPException(400, "声音复刻路由不可用：请检查授权、启用状态和预算，不会改用旧连接")
+        if capability == "voice_clone" and candidates:
+            priced_candidates, pricing_errors = [], []
+            for connection, model, route_config in candidates:
+                try:
+                    prepare_voice_clone_cost(db, connection)
+                    priced_candidates.append((connection, model, route_config))
+                except ProviderError as exc:
+                    pricing_errors.append(str(exc))
+            if not priced_candidates:
+                raise HTTPException(400, "；".join(pricing_errors))
+            candidates = priced_candidates
         routed_aliyun = None
         if candidates:
             errors = []

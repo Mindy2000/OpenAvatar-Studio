@@ -170,10 +170,15 @@ async function loadEvidence() {
 }
 
 async function loadMessages() {
-  const rows = await api(`/api/avatars/${state.currentId}/messages?timeline_kind=${state.previewMode ? "preview" : "official"}`);
+  const avatarId = state.currentId;
+  const rows = await api(`/api/avatars/${avatarId}/messages?timeline_kind=${state.previewMode ? "preview" : "official"}`);
+  if (state.currentId !== avatarId) return;
   const list = $("#messageList");
+  const signature = JSON.stringify([avatarId, state.previewMode, state.interfaceLanguage, rows]);
+  if (list.dataset.signature === signature && !list.querySelector("[data-stream-text]")) return;
+  list.dataset.signature = signature;
   if (!rows.length) list.innerHTML = tr`<div class="empty-chat"><h3>从一句自然的问候开始</h3><p>回复由你在 AI 设置中选择的模型生成。</p></div>`;
-  else list.innerHTML = rows.map(row => `<div class="message ${row.role} ${row.channel === "proactive" ? "proactive" : ""}"><span>${escapeHtml(row.content)}</span>${row.role === "assistant" ? tr`<button class="message-audio" data-action="speak-message" title="使用复刻声音播放">♫</button>` : ""}</div>`).join("");
+  else list.innerHTML = rows.map(renderChatMessage).join("");
   state.lastProactiveMessageId = Math.max(state.lastProactiveMessageId, ...rows.filter(row => row.channel === "proactive").map(row => Number(row.id)), 0);
   list.scrollTop = list.scrollHeight;
 }

@@ -15,11 +15,11 @@ def create_chat_router(service: ChatService) -> APIRouter:
 
     @router.post("/api/avatars/{avatar_id}/chat")
     def chat(avatar_id: str, payload: ChatRequest) -> dict[str, Any]:
-        return service.reply(avatar_id, payload.message, payload.preview_mode)
+        return service.reply(avatar_id, payload.message, payload.preview_mode, payload.source_message_id)
 
     @router.post("/api/avatars/{avatar_id}/chat/stream")
     def stream_chat(avatar_id: str, payload: ChatRequest) -> StreamingResponse:
-        run_id, events = service.stream(avatar_id, payload.message, payload.preview_mode)
+        run_id, events = service.stream(avatar_id, payload.message, payload.preview_mode, payload.source_message_id)
 
         def encode():
             for event in events:

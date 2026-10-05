@@ -37,7 +37,7 @@
 | 音频 | 排除导入音频和生成音频文件，清空转写，过滤声音 provider 资产；不代表删除所有声音档案元数据 |
 | 图片 | 排除图片文件、生成图和视频关键帧文件；清空视觉登记、素材组、场景、关键帧及相关视觉/视频评审 |
 | 视频 | 排除生成视频文件，清空关键帧记录并过滤视频资产与评审；独立图片开关仍影响关键帧文件 |
-| 通话记录 | 清空实时通话 sessions 和 turns；不自动替代对话开关 |
+| 通话记录 | 排除通话卡片、voice_call文字、sessions/turns、全部回复诊断及合成音频；普通聊天与原始语音附件分别由对话/音频开关控制 |
 
 API 参数为 `include_conversations`、`include_audio`、`include_images`、`include_video`、`include_call_history`。界面明确传入五项；旧客户端省略 `include_video` 时会沿用图片选项。
 
@@ -59,3 +59,7 @@ API 参数为 `include_conversations`、`include_audio`、`include_images`、`in
 登记素材 API 接受 `candidate`、`approved`、`canonical`、`rejected`、`retired`。空白角色模板中的 `draft` 仅指设定草稿，不是登记素材的可写状态。用户批准前不得将候选当作 canonical 身份参考。
 
 就绪级别为 `required`、`recommended`、`advanced`。世界事实使用 `real_verified`、`user_confirmed`、`fictional_canon`、`fictional_runtime`、`hybrid_derived`；可变性包括 `locked`、`approval_only`、`evolving`、`historical`。
+
+## 通话记录导出范围（2026-10-05）
+
+2026-10-05修复：主聊天和历史搜索均隐藏voice_call逐句文字，仍保留通话卡片；文字继续在本机供模型上下文使用。取消“通话记录”导出会排除通话卡片、voice_call消息、sessions/turns及全部回复诊断副本。旧合成音频无法区分通话与试听，因此同时排除所有generated/audio文件；原始录音及按住说话的附件仍由音频选项控制。这不会删除本机数据，也不会清除用户另行写入的设定或记忆。导入用量的imported_history标记继续避免历史消费重复计入预算。

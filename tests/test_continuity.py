@@ -185,3 +185,27 @@ def test_missing_visual_reviewer_requires_manual_approval(tmp_path: Path):
         )
         assert review["sendable"] is False
         assert review["manual_review"] is True
+
+
+def test_unrelated_scene_reference_cannot_satisfy_requested_scene(tmp_path: Path):
+    with make_client(tmp_path) as client:
+        aid = create_avatar(client)
+        asset_id = add_visual(client, aid)
+        base = f'/api/avatars/{aid}'
+        other = client.post(base + '/visual-asset-sets', json={
+            'set_type': 'scene', 'semantic_key': 'old-room', 'label': '旧房间', 'status': 'approved',
+        }).json()
+        client.post(base + f"/visual-asset-sets/{other['id']}/items", json={
+            'visual_asset_id': asset_id, 'role': 'first_frame', 'status': 'approved',
+        })
+        scene = client.post(base + '/scene-profiles', json={
+            'display_name': '新图书馆', 'semantic_key': 'new-library',
+        }).json()
+        plan = client.post(base + '/continuity/plan', json={
+            'prompt': '在新图书馆挥手', 'hints': {'scene': '新图书馆'},
+        }).json()
+        assert plan['ready'] is False
+        assert plan['needs_key_image'] is True
+        assert plan['contract']['scene_profile_id'] == scene['id']
+        assert plan['contract']['scene_route'] == 'image_bootstrap'
+        assert not any(item['set_id'] == other['id'] for item in plan['contract']['references'])

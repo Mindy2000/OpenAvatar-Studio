@@ -1,10 +1,14 @@
 # User guide
 
-[中文](GUIDE.md) · [Home](../README_EN.md)
+[中文](GUIDE.md) · [Quick start](QUICKSTART_EN.md) · [Home](../README_EN.md)
 
 This guide describes release candidate 0.1.0. Fresh installations have no preloaded avatars. Supply your own provider accounts, models, and weights. Imports, editing, and preliminary offline persona analysis work without a model connection.
 
 ## Installation and startup
+
+When a chat capability route is configured in the provider hub, the creation wizard uses it directly without requiring a legacy model connection. Build readiness also checks the route's consent, enabled state, credentials, and budget.
+
+Guided persona analysis uses the latest answers for enabled modules. Superseded answers remain historical evidence and are not fed back into the analysis.
 
 ### Source installation
 
@@ -87,6 +91,8 @@ Proactive contact is off by default and only writes to the local conversation ti
 
 ## Voice, visuals, and video
 
+To use speech without cloning, select a MiniMax preset voice in the build center. Configure a MiniMax TTS route with text consent first, then play a chat reply and confirm the charge. Selecting a preset makes no cloud call and incurs no cloning fee; synthesis is still billed by the provider. Presets do not count as completed voice cloning.
+
 Cloned speech playback needs a working provider and an activated asset. Transcripts can be provided by ASR or manually. The realtime WebSocket gateway supports text-driven streaming and interruptions. Binary audio input currently reports that realtime ASR is not configured; file transcription is not live microphone recognition.
 
 Reference images become candidates and require approval before serving as approved/canonical identities. Organize people, clothing, objects, and scenes into continuity sets. Generated media uses applicable reference contracts; completed videos are downloaded, sampled into keyframes, and reviewed. Keyframe extraction requires FFmpeg. Without an available reviewer, manual acceptance is required.
@@ -114,3 +120,31 @@ Deleting an avatar removes current records and its asset directory, not previous
 - Desktop package issues: try the source installation for diagnosis. Windows/Linux desktop behavior requires native-platform verification.
 
 See [Privacy](PRIVACY_EN.md) for data boundaries and [Security](../SECURITY_EN.md) for reporting.
+
+### Data maintenance
+
+Settings & Export → Data maintenance provides memory editing and approval, world conflict checks and resolution, and database backups and restore. Proposing a conflict candidate sends it to fact approval rather than approving it immediately. Database restore affects all avatars in the current data directory and first creates a safety backup; it does not replace media files or system credentials. In an image import review, add or correct image text before confirming it. Already confirmed text must be revised through memories.
+
+## Chat composer and browser voice calls
+
+The + panel offers images/video, camera, calls, files, manual locations, and favorites. Calls branch into voice and video. Hold to record, release to send, or slide upward to cancel; recordings shorter than 0.5 seconds are discarded and the maximum is 60 seconds. Without recognized text, only the recording is saved. Voice-note replies are capped at 80 characters. Camera preview and capture are mirrored by default, with an option to disable mirroring.
+
+Chat image understanding is separate from imported-image OCR. With an authorized vision route, sending a photo requests an image-based reply; older photos have an explicit action. Successful results are cached and failures require manual retry. Files and videos are stored for display, not automatically interpreted. Chat attachments do not automatically become persona-building materials.
+
+Start a browser voice call from + → Calls → Voice. The microphone starts after Start call; limits are three turns and ten minutes. Mute, direct interruption, manual interruption, minimize, and hangup are supported. Browser recognition sends text to the call gateway; model replies use the selected TTS voice. A separate local microphone-level monitor stops playback early. Headphones are recommended; speaker echo, noise, and other devices need separate checks. Hiding the page or switching avatars ends the call.
+
+The call window has no per-utterance captions. Fixed on 2026-10-05: main chat and history search hide voice_call transcripts while retaining call cards; local transcripts remain available to model context. Disabling call-history export excludes call cards, voice_call messages, sessions/turns, and all reply diagnostics. Legacy synthesized audio cannot distinguish calls from auditions, so all generated/audio files are also omitted. Original recordings and voice-note attachments follow the audio option. This does not delete local data or independently authored persona settings or memories.
+
+Proactive greetings use local time, an 80-character cap, and instructions not to invent weather, location, or activities; these instructions do not guarantee every response. Memory maintenance supports checked merges and revision history. Imported usage events marked imported_history do not count against current connection budgets.
+
+
+Ordinary text and voice-note replies enforce an 80-character limit including punctuation, consistently across streamed output and persistence. The new composer and call UI passed local English, dynamic-label, language round-trip, and user-content preservation checks. Full cloud interruption and continuation, and the combined mirrored-camera, send, and image-understanding flow passed in the current Mac acceptance environment. This does not establish acceptance on other devices, browsers, noisy speaker setups, or every provider.
+
+
+### Voice-cloning estimate correction (2026-10-05)
+
+The following estimate validation and pre-call budget checks apply only to voice-cloning capability routes in the unified service hub, including Aliyun connections selected through those routes. Without such a route, the legacy Aliyun connection can still be used; it does not have the same per-call CNY estimate validation or remaining-budget preflight. Prefer the unified service hub for new configurations.
+
+The old 1.5 default did not distinguish currency. Mainland MiniMax official endpoints now default to CNY 9.90 per voice, from the [official pricing page](https://platform.minimax.cn/docs/guides/pricing-paygo). The provider charges cloning at first synthesis; the app records the estimate at successful cloning to account for it early, not as an actual debit. Audition synthesis is separate.
+
+International endpoints, proxies, and other services require an explicit per-call CNY estimate in cost_estimates.voice_clone. Valid custom estimates take precedence; negative, nonfinite, and zero cloud-cloning estimates are rejected. Before upload, the cloning estimate must fit remaining daily/monthly budgets. An unavailable configured cloning route cannot fall back to the legacy connection. This is not an atomic reservation for concurrent requests or a guarantee about actual bills. Other capabilities retain their existing estimation limits; this change addresses voice cloning specifically.

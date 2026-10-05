@@ -410,6 +410,12 @@ def record_answer(db: Database, avatar_id: str, question_key: str, answer: str) 
         "UPDATE world_modules SET status='answered',updated_at=? WHERE avatar_id=? AND module_key=?",
         (now, avatar_id, question_key),
     )
+    # Preserve superseded proposals as history; approval must apply the latest answer.
+    db.execute(
+        "UPDATE world_fact_proposals SET status='rejected',reviewed_at=?,review_note=? "
+        "WHERE avatar_id=? AND fact_key=? AND status='pending'",
+        (now, "已由更新的问答答案替代", avatar_id, item["fact_key"]),
+    )
     propose_fact(
         db,
         avatar_id,

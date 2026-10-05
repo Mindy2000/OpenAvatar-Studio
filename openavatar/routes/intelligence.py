@@ -10,6 +10,14 @@ def create_intelligence_router(context: ApplicationContext) -> APIRouter:
     runs = context.runs
     chat_service = context.chat
 
+    @router.get("/api/avatars/{avatar_id}/memories")
+    def list_avatar_memories(avatar_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        require_avatar(db, avatar_id)
+        return db.all(
+            "SELECT id,speaker,content,kind,confidence FROM memories WHERE avatar_id=? ORDER BY id DESC LIMIT ?",
+            (avatar_id, min(max(limit, 1), 500)),
+        )
+
     @router.get("/api/avatars/{avatar_id}/memory-graph")
     def avatar_memory_graph(avatar_id: str, limit: int = 80) -> dict[str, Any]:
         require_avatar(db, avatar_id)
@@ -57,6 +65,8 @@ def create_intelligence_router(context: ApplicationContext) -> APIRouter:
             return result
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     @router.post("/api/avatars/{avatar_id}/memories/consolidate")
     def consolidate_avatar_memories(avatar_id: str, limit: int = 120) -> dict[str, Any]:
@@ -153,4 +163,3 @@ def create_intelligence_router(context: ApplicationContext) -> APIRouter:
         return update_proactive_rules(db, avatar_id, payload.model_dump())
 
     return router
-

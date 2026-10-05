@@ -23,6 +23,7 @@ def create_archive_router(context: ApplicationContext) -> APIRouter:
             "UPDATE persona_profiles SET summary=?,traits_json=?,speaking_style=?,boundaries=?,updated_at=? WHERE avatar_id=?",
             (payload.summary, json.dumps(payload.traits, ensure_ascii=False), payload.speaking_style, payload.boundaries, int(time.time()), avatar_id),
         )
+        build_persona_core(db, avatar_id)
         return get_persona(avatar_id)
 
     @router.get("/api/avatars/{avatar_id}/messages")
@@ -113,14 +114,24 @@ def create_archive_router(context: ApplicationContext) -> APIRouter:
     def synthesize_avatar_speech(avatar_id: str, payload: SpeechRequest) -> FileResponse:
         require_avatar(db, avatar_id)
         if not payload.confirm_billable_call:
-            raise HTTPException(400, "生成复刻语音会调用云端 API 并可能产生费用，请明确确认")
+            raise HTTPException(400, "生成语音会调用云端 API 并可能产生费用，请明确确认")
+        selected_voice = db.one("SELECT * FROM voice_profiles WHERE avatar_id=? AND active=1 ORDER BY id DESC LIMIT 1", (avatar_id,))
+        builtin = bool(selected_voice and selected_voice["provider"] == "minimax" and selected_voice["profile_kind"] == "builtin_tts")
+        if selected_voice and selected_voice["status"] == "approved" and selected_voice["profile_kind"] == "none":
+            raise HTTPException(400, "当前人物已关闭声音")
         profile = db.one(
             "SELECT * FROM provider_assets WHERE avatar_id=? AND kind='voice' AND active=1 ORDER BY id DESC LIMIT 1",
             (avatar_id,),
         )
+        if builtin:
+            profile = {"external_id": selected_voice["voice_id"]}
         if not profile or not profile.get("external_id"):
-            raise HTTPException(400, "该数字人还没有完成声音复刻")
+            raise HTTPException(400, "请先在构建中心选择 MiniMax 预置音色或完成声音复刻")
         candidates = route_candidates(db, "tts", avatar_id)
+        if builtin:
+            candidates = [item for item in candidates if item[0]["provider_kind"] == "minimax"]
+            if not candidates:
+                raise HTTPException(400, "预置音色需要已授权且未超预算的 MiniMax 语音合成路由")
         if candidates:
             errors = []
             for connection, model, route_config in candidates:

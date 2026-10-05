@@ -101,10 +101,14 @@ def review_memory(db: Database, avatar_id: str, memory_id: int, action: str, not
 
 
 def merge_memories(db: Database, avatar_id: str, primary_id: int, duplicate_id: int) -> dict[str, Any]:
+    if primary_id == duplicate_id:
+        raise ValueError("不能将记忆与自身合并")
     primary = db.one("SELECT * FROM memories WHERE id=? AND avatar_id=?", (primary_id, avatar_id))
     duplicate = db.one("SELECT * FROM memories WHERE id=? AND avatar_id=?", (duplicate_id, avatar_id))
     if not primary or not duplicate:
         raise KeyError("记忆不存在")
+    if any(row["kind"] in {"merged_duplicate", "rejected"} for row in (primary, duplicate)):
+        raise ValueError("请选择两条可用记忆；已合并或拒绝的条目不能再次合并")
     merged = f"{primary['content']}\n{duplicate['content']}"
     revise_memory(db, avatar_id, primary_id, {"content": merged[:100000], "confidence": max(float(primary["confidence"]), float(duplicate["confidence"]))}, action="merge", note=f"合并 duplicate #{duplicate_id}")
     revise_memory(db, avatar_id, duplicate_id, {"kind": "merged_duplicate", "confidence": 0.0}, action="merged_duplicate", note=f"合并到 #{primary_id}")

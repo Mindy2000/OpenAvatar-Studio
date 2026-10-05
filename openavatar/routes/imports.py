@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from openavatar.routes._shared import *
+from openavatar.schemas import ManualImageText
 
 
 def create_imports_router(context: ApplicationContext) -> APIRouter:
@@ -187,6 +188,28 @@ def create_imports_router(context: ApplicationContext) -> APIRouter:
         )
         total = db.one("SELECT COUNT(*) AS count FROM import_rows WHERE import_id=?", (import_id,)) or {"count": 0}
         return {"import": item, "speakers": speakers, "rows": rows, "total": int(total["count"]), "truncated": int(total["count"]) > safe_limit}
+
+    @router.put("/api/avatars/{avatar_id}/imports/{import_id}/text")
+    def save_image_text(avatar_id: str, import_id: int, payload: ManualImageText) -> dict[str, Any]:
+        require_avatar(db, avatar_id)
+        item = db.one("SELECT * FROM imports WHERE id=? AND avatar_id=?", (import_id, avatar_id))
+        if not item or item["category"] != "image":
+            raise HTTPException(404, "图片导入记录不存在")
+        if item["status"] == "confirmed":
+            raise HTTPException(409, "已确认的图片文字不能覆盖，请在记忆中修订")
+        rows = parse_text_payload(payload.text)
+        if not rows:
+            raise HTTPException(400, "请填写图片中的文字")
+        if len(rows) > 2000:
+            raise HTTPException(400, "图片文字不能超过2000行")
+        with db.transaction() as connection:
+            connection.execute("DELETE FROM import_rows WHERE import_id=?", (import_id,))
+            connection.executemany(
+                "INSERT INTO import_rows(import_id,row_index,speaker,content,created_at) VALUES(?,?,?,?,?)",
+                [(import_id, index, row["speaker"], row["content"], int(time.time())) for index, row in enumerate(rows)],
+            )
+            connection.execute("UPDATE imports SET status='needs_review',note=? WHERE id=?", ("图片文字已手工补录，等待确认", import_id))
+        return preview_import(avatar_id, import_id)
 
     @router.post("/api/avatars/{avatar_id}/imports/{import_id}/confirm")
     def confirm_import(avatar_id: str, import_id: int, payload: ImportConfirm) -> dict[str, Any]:

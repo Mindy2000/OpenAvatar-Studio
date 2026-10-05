@@ -69,11 +69,12 @@ def create_world_router(context: ApplicationContext) -> APIRouter:
     def review_world_proposal(avatar_id: str, proposal_id: int, payload: WorldProposalReview) -> dict[str, Any]:
         require_avatar(db, avatar_id)
         try:
-            return review_proposal(db, avatar_id, proposal_id, payload.action, payload.note)
+            result = review_proposal(db, avatar_id, proposal_id, payload.action, payload.note)
+            build_persona_core(db, avatar_id)
+            return result
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
         except WorldModelError as exc:
             raise HTTPException(400, str(exc)) from exc
 
     return router
-

@@ -84,6 +84,13 @@ def completion_report(db: Database, avatar_id: str, extra_checks: list[dict[str,
     has_model_choice = bool(connection and connection.get("last_test_status") == "ok" and test_fresh)
     if not effective_connection:
         has_model_choice = bool(model_settings) or bool(db.setting("model", {}))
+    from openavatar.services.provider_hub import find_route, routed_chat_configs
+
+    if find_route(db, "chat", avatar_id):
+        has_model_choice = any(
+            config.model and (config.mode == "local_openai" or config.api_key)
+            for config in routed_chat_configs(db, avatar_id)
+        )
     checks: list[dict[str, Any]] = []
     if subject_kind == "fictional":
         document_covers_required = text_counts["fictional"] >= 4 and len(str(persona.get("summary", ""))) >= 20

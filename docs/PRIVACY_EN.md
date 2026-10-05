@@ -46,3 +46,24 @@ Image metadata removal is best effort and does not cover every format. Custom OC
 Diagnostics, chat explanations, usage records, and logs can contain paths, user input, or provider errors. Review private content before sharing. Dedicated keys are isolated, but arbitrary provider error text is not guaranteed to be redacted.
 
 Provider retention, training, deletion, and billing depend on the services you choose. The project supplies no official cloud API and does not automatically revoke material already retained by third parties.
+
+### In-process credential cache
+
+Credentials successfully read from the OS store remain in process memory to avoid repeated authorization prompts on refresh or concurrent requests. No additional file or database copy is written. Updating or deleting a key through the app updates or clears the cache. Restart the app after changing a key directly in the OS store; the cache ends with the process.
+
+## Data handling for the new chat features
+
+With a configured and authorized vision route, sending a chat photo sends pixels and conversation context to the vision provider. The description and reply are saved locally; failures are not retried automatically. This is separate from builder OCR. Files, videos, and manual location cards are not automatically submitted for multimodal interpretation.
+
+Voice notes and browser voice calls also use SpeechRecognition, which may use the browser's online service. Recognized text is sent for model replies. The microphone-level interruption detector runs locally and releases its tracks on hangup. Hidden call bubbles are not deleted: transcripts remain local and can enter subsequent model context.
+
+Fixed on 2026-10-05: main chat and history search hide voice_call transcripts while retaining call cards; local transcripts remain available to model context. Disabling call-history export excludes call cards, voice_call messages, sessions/turns, and all reply diagnostics. Legacy synthesized audio cannot distinguish calls from auditions, so all generated/audio files are also omitted. Original recordings and voice-note attachments follow the audio option. This does not delete local data or independently authored persona settings or memories.
+
+
+### Voice-cloning estimate correction (2026-10-05)
+
+The following estimate validation and pre-call budget checks apply only to voice-cloning capability routes in the unified service hub, including Aliyun connections selected through those routes. Without such a route, the legacy Aliyun connection can still be used; it does not have the same per-call CNY estimate validation or remaining-budget preflight. Prefer the unified service hub for new configurations.
+
+The old 1.5 default did not distinguish currency. Mainland MiniMax official endpoints now default to CNY 9.90 per voice, from the [official pricing page](https://platform.minimax.cn/docs/guides/pricing-paygo). The provider charges cloning at first synthesis; the app records the estimate at successful cloning to account for it early, not as an actual debit. Audition synthesis is separate.
+
+International endpoints, proxies, and other services require an explicit per-call CNY estimate in cost_estimates.voice_clone. Valid custom estimates take precedence; negative, nonfinite, and zero cloud-cloning estimates are rejected. Before upload, the cloning estimate must fit remaining daily/monthly budgets. An unavailable configured cloning route cannot fall back to the legacy connection. This is not an atomic reservation for concurrent requests or a guarantee about actual bills. Other capabilities retain their existing estimation limits; this change addresses voice cloning specifically.

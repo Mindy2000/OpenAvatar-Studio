@@ -23,6 +23,7 @@ from openavatar.routes.archive import create_archive_router
 from openavatar.routes.avatars import create_avatars_router
 from openavatar.routes.calls import create_call_router
 from openavatar.routes.chat import create_chat_router
+from openavatar.routes.chat_media import create_chat_media_router
 from openavatar.routes.continuity import create_continuity_router
 from openavatar.routes.identity import create_identity_router
 from openavatar.routes.imports import create_imports_router
@@ -102,6 +103,8 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             response = await call_next(request)
             status_code = response.status_code
             response.headers["X-Request-Id"] = request_id
+            if not request.url.path.startswith("/api/"):
+                response.headers["Cache-Control"] = "no-store"
             return response
         finally:
             duration_ms = (time.perf_counter() - started) * 1000
@@ -119,6 +122,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
     for router in (
         create_system_router(context),
         create_avatars_router(context),
+        create_chat_media_router(context),
         create_imports_router(context),
         create_world_router(context),
         create_identity_router(context),

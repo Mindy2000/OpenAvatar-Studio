@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import struct
 import tempfile
 import threading
@@ -9,9 +10,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
-
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 class FakeModelHandler(BaseHTTPRequestHandler):
@@ -66,6 +64,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run OpenAvatar Studio browser release smoke tests.")
     parser.add_argument("--base-url", default="http://127.0.0.1:8767")
     args = parser.parse_args()
+    output = Path(os.environ.get("OPENAVATAR_SCREENSHOT_DIR", "output"))
+    output.mkdir(parents=True, exist_ok=True)
     model_server = ThreadingHTTPServer(("127.0.0.1", 0), FakeModelHandler)
     threading.Thread(target=model_server.serve_forever, daemon=True).start()
     try:
@@ -135,7 +135,7 @@ def main() -> int:
                 expect(page.locator("#readinessBanner")).to_contain_text("正式可用", timeout=15000)
                 page.locator("[data-tab='chat']").click()
                 page.locator("#chatMessageInput").fill("请流式回复一句问候")
-                page.locator("#chatForm button.primary").click()
+                page.locator("#sendChatText").click()
                 page.wait_for_function("() => !document.querySelector('[data-action=cancel-chat]')")
                 expect(page.locator("#messageList .message.assistant").last).to_contain_text("你好，我会依据已经确认的资料回答。", timeout=15000)
                 page.locator("[data-tab='training']").click()
@@ -147,7 +147,7 @@ def main() -> int:
                 page.locator("[data-action='export-avatar']").click()
                 page.wait_for_selector("#packageExportDialog[open]")
                 page.locator("[data-action='cancel-package-export']").click()
-                page.screenshot(path=str(ROOT / "output" / "ui-smoke-desktop.png"), full_page=True)
+                page.screenshot(path=str(output / "ui-smoke-desktop.png"), full_page=True)
 
                 page.locator("#studioView [data-action='home']").click()
                 page.locator("[data-action='new-fictional-avatar']").first.click()
@@ -185,7 +185,7 @@ def main() -> int:
                 mobile.locator("[data-action='toggle-mobile-menu']").click()
                 assert not mobile.locator(".top-actions").is_visible()
                 assert mobile.locator("html").evaluate("node => node.scrollWidth <= node.clientWidth")
-                mobile.screenshot(path=str(ROOT / "output" / "ui-smoke-mobile.png"), full_page=True)
+                mobile.screenshot(path=str(output / "ui-smoke-mobile.png"), full_page=True)
                 assert not console_errors, console_errors
                 browser.close()
         print("UI_SMOKE_OK")

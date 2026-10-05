@@ -31,7 +31,7 @@ def create_provider_router(context: ApplicationContext) -> APIRouter:
         routes = [public_route(row) for row in db.all("SELECT * FROM capability_routes ORDER BY scope_type,avatar_id,capability")]
         usage = db.all(
             "SELECT provider,COUNT(*) AS calls,COALESCE(SUM(estimated_cost),0) AS estimated_cost,MAX(created_at) AS last_used_at "
-            "FROM usage_events WHERE provider LIKE 'pc_%' GROUP BY provider"
+            "FROM usage_events WHERE provider LIKE 'pc_%' AND CASE WHEN json_valid(metadata_json) THEN COALESCE(json_extract(metadata_json,'$.imported_history'),0) ELSE 0 END=0 GROUP BY provider"
         )
         return {"capabilities": list(CAPABILITIES), "presets": PROVIDER_PRESETS, "connections": connections, "routes": routes, "usage": usage}
 

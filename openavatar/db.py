@@ -716,10 +716,15 @@ class Database:
                 "turn_id": "TEXT NOT NULL DEFAULT ''",
                 "media_url": "TEXT NOT NULL DEFAULT ''",
                 "media_type": "TEXT NOT NULL DEFAULT ''",
+                "message_kind": "TEXT NOT NULL DEFAULT 'text'",
+                "attachment_json": "TEXT NOT NULL DEFAULT '{}'",
+                "starred": "INTEGER NOT NULL DEFAULT 0",
+                "client_key": "TEXT NOT NULL DEFAULT ''",
             }
             for column, definition in message_column_defaults.items():
                 if column not in message_columns:
                     connection.execute(f"ALTER TABLE messages ADD COLUMN {column} {definition}")
+            connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_key ON messages(avatar_id,client_key) WHERE client_key<>''")
             world_event_columns = {row[1] for row in connection.execute("PRAGMA table_info(world_events)")}
             if "source_message_id" not in world_event_columns:
                 connection.execute("ALTER TABLE world_events ADD COLUMN source_message_id INTEGER NOT NULL DEFAULT 0")
@@ -747,6 +752,20 @@ class Database:
                 "CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)"
             )
             apply_migrations(connection, current_version)
+            # Older voice calls used the chat channel. Match both sides of the
+            # same saved turn against the call transcript, never text alone.
+            connection.execute("""
+                UPDATE messages SET channel='voice_call'
+                WHERE channel='chat' AND turn_id<>'' AND (avatar_id,turn_id) IN (
+                    SELECT u.avatar_id,u.turn_id FROM messages u
+                    JOIN messages a ON a.avatar_id=u.avatar_id AND a.turn_id=u.turn_id
+                        AND a.role='assistant'
+                    JOIN realtime_call_turns t ON t.avatar_id=u.avatar_id
+                        AND t.user_transcript=u.content AND t.assistant_text=a.content
+                        AND ABS(t.created_at-a.created_at)<=1
+                    WHERE u.role='user' AND u.turn_id<>''
+                )
+            """)
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:

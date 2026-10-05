@@ -7,6 +7,12 @@ document.addEventListener("click", async event => {
   const historyKind = event.target.closest("[data-history-kind]")?.dataset.historyKind;
   const timelineKind = event.target.closest("[data-timeline-kind]")?.dataset.timelineKind;
   try {
+    if (action === "start-video-call" && typeof endVoiceCall === "function") endVoiceCall();
+    if (action === "open-maintenance" || action?.startsWith("maintenance-")) return await handleMaintenance(action, event.target.closest("[data-action]"));
+    if (action === "save-image-text") {
+      state.currentImport.preview = await api(`/api/avatars/${state.currentId}/imports/${state.currentImport.id}/text`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:$("#manualImageText").value})});
+      renderImportReview(); return;
+    }
     if (avatar) return openAvatar(avatar);
     if (step) return goStep(Number(step));
     if (tab) return selectTab(tab);
@@ -89,8 +95,8 @@ document.addEventListener("click", async event => {
       toast(tr`已导入数字人：${result.name}`);
       await openAvatar(result.id);
     }
-    if (action === "new-real-avatar" || action === "new-avatar") { state.currentId = null; $("#identityForm").reset(); $("#uploadList").innerHTML = ""; setCreationMode("real"); showView("#wizardView"); goStep(1); }
-    if (action === "new-fictional-avatar") { state.currentId = null; $("#identityForm").reset(); $("#uploadList").innerHTML = ""; state.fictionalFlow = "guided"; setCreationMode("fictional"); showView("#wizardView"); goStep(1); }
+    if (action === "new-real-avatar" || action === "new-avatar") { state.currentId = null; state.current = null; state.guided = null; state.lastEvaluation = null; $("#identityForm").reset(); $("#uploadList").innerHTML = ""; setCreationMode("real"); showView("#wizardView"); goStep(1); }
+    if (action === "new-fictional-avatar") { state.currentId = null; state.current = null; state.guided = null; state.lastEvaluation = null; $("#identityForm").reset(); $("#uploadList").innerHTML = ""; state.fictionalFlow = "guided"; setCreationMode("fictional"); showView("#wizardView"); goStep(1); }
     if (action === "set-fictional-flow") {
       setFictionalFlow(event.target.closest("[data-flow]").dataset.flow);
       if (state.fictionalFlow === "guided" && state.currentId) await loadGuidedBuilder();
@@ -166,7 +172,7 @@ document.addEventListener("click", async event => {
     }
     if (action === "speak-message") {
       const text = event.target.closest(".message").querySelector("span").textContent;
-      if (!confirm(tr("使用复刻声音播放会调用云端 TTS 并可能产生费用。继续吗？"))) return;
+      if (!confirm(tr("使用所选声音播放会调用云端 TTS 并可能产生费用。继续吗？"))) return;
       const response = await fetch(`/api/avatars/${state.currentId}/speech`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, confirm_billable_call: true }) });
       if (!response.ok) { let detail = tr("语音生成失败"); try { detail = (await response.json()).detail || detail; } catch (_) {} throw new Error(systemText(detail)); }
       await playSpeechBlob(await response.blob());
@@ -581,7 +587,7 @@ $$('.upload-card input[type="file"]').forEach(input => input.addEventListener("c
     try {
       const result = await api(`/api/avatars/${state.currentId}/imports?category=${encodeURIComponent(event.target.dataset.category)}`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream", "X-File-Name": encodeURIComponent(file.name) }, body: file });
       row.dataset.uploadImport = result.id; setSystemMessage(row.querySelector(".upload-status"), result.note);
-      if (result.status === "needs_review") row.insertAdjacentHTML("beforeend", tr`<button type="button" class="secondary" data-action="review-import" data-import-id="${result.id}">检查内容</button>`);
+      if (result.status === "needs_review" || result.category === "image") row.insertAdjacentHTML("beforeend", tr`<button type="button" class="secondary" data-action="review-import" data-import-id="${result.id}">检查内容</button>`);
       state.current = await api(`/api/avatars/${state.currentId}`);
       renderProfile();
     }
@@ -602,8 +608,10 @@ $("#modelForm").addEventListener("submit", async event => {
   const connectionId = $("#wizardConnectionSelect").value;
   try {
     if (!connectionId) throw new Error(tr("请先新建一个模型连接"));
-    const connection = state.modelConnections.find(item => item.id === connectionId);
-    await saveCurrentAvatarModelSettings({ mode: connection?.connection_type === "cloud_openai" ? "cloud" : "local", connection_id: connectionId }, $("#modelTestResult"));
+    if (connectionId !== "__capability_route__") {
+      const connection = state.modelConnections.find(item => item.id === connectionId);
+      await saveCurrentAvatarModelSettings({ mode: connection?.connection_type === "cloud_openai" ? "cloud" : "local", connection_id: connectionId }, $("#modelTestResult"));
+    }
     const result = await api(`/api/avatars/${state.currentId}/analyze`, { method: "POST" });
     $("#personaForm [name=summary]").value = result.summary || "";
     $("#personaForm [name=traits]").value = (result.traits || []).join("\n");

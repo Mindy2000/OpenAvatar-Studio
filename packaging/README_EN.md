@@ -13,7 +13,7 @@ python -m pip install -r requirements-packaging.txt
 python scripts/build_desktop.py --dry-run
 python scripts/build_desktop.py
 python scripts/collect_release_licenses.py
-python scripts/package_release.py --version v0.1.0
+python scripts/package_release.py --version v0.1.0-rc.5
 ```
 
 `build_desktop.py` uses `openavatar/desktop.py`, bundling static files, language resources, templates, the project LICENSE, and credential-store components. Artifacts go to `dist/`, intermediates to `build/`; `.spec` files are regenerable. `package_release.py` writes ZIP/SHA-256 files under `release/`. `--platform macos|windows|linux` selects an existing artifact type; it does not cross-compile.

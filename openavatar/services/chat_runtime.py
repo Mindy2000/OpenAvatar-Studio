@@ -57,25 +57,38 @@ class ChatService:
         row["traits"] = json.loads(row.pop("traits_json", "[]"))
         return row
 
-    def get_messages(self, avatar_id: str, limit: int = 100, timeline_kind: str = "official") -> list[dict[str, Any]]:
+    def get_messages(self, avatar_id: str, limit: int = 100, timeline_kind: str = "official", *, include_call_context: bool = False) -> list[dict[str, Any]]:
         self.require_avatar(avatar_id)
         if timeline_kind not in {"official", "preview"}:
             raise HTTPException(400, "时间线类型不合法")
         safe_limit = min(max(limit, 1), 500)
         channel_filter = "channel='preview'" if timeline_kind == "preview" else "channel<>'preview'"
-        return list(reversed(self.db.all(
-            f"SELECT id,role,content,channel,created_at FROM messages WHERE avatar_id=? AND {channel_filter} ORDER BY id DESC LIMIT ?",
+        if not include_call_context:
+            channel_filter += " AND channel<>'voice_call'"
+        rows = list(reversed(self.db.all(
+            f"SELECT id,role,content,channel,created_at,media_url,media_type,message_kind,attachment_json,starred FROM messages WHERE avatar_id=? AND {channel_filter} ORDER BY id DESC LIMIT ?",
             (avatar_id, safe_limit),
         )))
+        for row in rows:
+            row["attachment"] = json.loads(row.pop("attachment_json") or "{}")
+            row["attachment"].pop("stored_name", None)
+            if row["message_kind"] in {"image", "video", "audio", "file"}:
+                row["media_url"] = f"/api/avatars/{avatar_id}/messages/{row['id']}/file"
+        return rows
 
-    def prepare(self, avatar_id: str, message: str, preview_mode: bool = False) -> dict[str, Any]:
+    def prepare(self, avatar_id: str, message: str, preview_mode: bool = False, source_message_id: int = 0) -> dict[str, Any]:
         avatar = self.require_avatar(avatar_id)
+        if source_message_id:
+            source = self.db.one("SELECT * FROM messages WHERE avatar_id=? AND id=? AND role='user' AND message_kind='audio'", (avatar_id, source_message_id))
+            if not source or (source['channel'] == 'preview') != preview_mode:
+                raise HTTPException(404, "原语音消息不存在或不在当前对话中")
+            self.db.execute("UPDATE messages SET content=? WHERE avatar_id=? AND id=?", (message, avatar_id, source_message_id))
         readiness = self.readiness(self.db, avatar_id)
         if not readiness["can_start_official"] and not preview_mode:
             raise HTTPException(409, "必须项未完成，暂时不能正式使用；可以在预览测试模式中试聊。")
         persona_core = current_persona_core(self.db, avatar_id)
         persona = persona_core["core"].get("persona", self.get_persona(avatar_id))
-        history = self.get_messages(avatar_id, 20, "preview" if preview_mode else "official")
+        history = self.get_messages(avatar_id, 20, "preview" if preview_mode else "official", include_call_context=True)
         memory_rows = self.db.all(
             """SELECT COALESCE(NULLIF(c.corrected_speaker,''),m.speaker) speaker,
                       COALESCE(NULLIF(c.corrected_content,''),m.content) content,m.is_avatar
@@ -106,6 +119,7 @@ class ChatService:
             f"世界地区：{region_rules.get('name_zh', '')}；世界类型：{language_context.get('world_type', '')}。聊天中的节日、职业、作息、称呼和社会规则应符合这个世界地区。\n"
             f"人格：{persona.get('summary', '')}\n特征：{'、'.join(persona.get('traits', []))}\n"
             f"表达方式：{persona.get('speaking_style', '')}\n边界：{persona.get('boundaries', '')}\n"
+            "每次回复最多80个字符（含标点），请在限额内完整表达。\n"
             "只能使用提供的记忆，不要把推测冒充事实。你是AI数字人，不得用于冒充真人或欺诈。\n"
             f"原始表达风格指纹：{json.dumps(signature, ensure_ascii=False)}。只学习长度、问句率、碎片感和分条方式，不照搬样例事实。\n"
             f"里世界和运行事实：\n{world_context}\n"
@@ -114,30 +128,33 @@ class ChatService:
             "相关记忆：\n" + "\n".join(f"{row['speaker']}: {row['content']}" for row in memories)
         )
         messages = [{"role": "system", "content": system}]
-        messages.extend({"role": row["role"], "content": row["content"]} for row in history if row["role"] in {"user", "assistant"})
+        messages.extend({"role": row["role"], "content": row["content"]} for row in history if row["role"] in {"user", "assistant"} and row["id"] != source_message_id)
         messages.append({"role": "user", "content": message})
         client = self.model_client_factory(self.db, self.settings, avatar_id)
         config = self.provider_config_factory(self.db, self.settings, avatar_id)
         if not client.available():
             raise HTTPException(503, self.unavailable_message(config))
         return {
+            "source_message_id": source_message_id,
             "readiness": readiness,
             "persona_core": persona_core,
             "messages": messages,
             "memories": memories,
             "client": client,
             "config": config,
-            "channel": "preview" if preview_mode and not readiness["can_start_official"] else "chat",
+            "channel": "preview" if preview_mode else "chat",
         }
 
     def persist(self, avatar_id: str, message: str, prepared: dict[str, Any], reply: str, latency_ms: int) -> dict[str, Any]:
         now = int(time.time())
         channel = str(prepared["channel"])
         turn_id = uuid.uuid4().hex
-        user_message_id = self.db.execute(
+        user_message_id = prepared.get("source_message_id") or self.db.execute(
             "INSERT INTO messages(avatar_id,role,content,channel,created_at,turn_id) VALUES(?,?,?,?,?,?)",
             (avatar_id, "user", message, channel, now, turn_id),
         )
+        if prepared.get("source_message_id"):
+            self.db.execute("UPDATE messages SET content=?,turn_id=? WHERE avatar_id=? AND id=?", (message, turn_id, avatar_id, user_message_id))
         assistant_message_id = self.db.execute(
             "INSERT INTO messages(avatar_id,role,content,channel,created_at,turn_id) VALUES(?,?,?,?,?,?)",
             (avatar_id, "assistant", reply, channel, int(time.time()), turn_id),
@@ -176,12 +193,13 @@ class ChatService:
             "turn_id": turn_id,
         }
 
-    def reply(self, avatar_id: str, message: str, preview_mode: bool = False) -> dict[str, Any]:
-        prepared = self.prepare(avatar_id, message, preview_mode)
+    def reply(self, avatar_id: str, message: str, preview_mode: bool = False, source_message_id: int = 0) -> dict[str, Any]:
+        prepared = self.prepare(avatar_id, message, preview_mode, source_message_id)
         client = prepared["client"]
         started = time.perf_counter()
         try:
             reply = client.chat(prepared["messages"])
+            reply = reply[:80]
         except (LocalModelError, ProviderError) as exc:
             config = prepared["config"]
             latency_ms = round((time.perf_counter() - started) * 1000)
@@ -194,8 +212,8 @@ class ChatService:
         self.metrics.observe("chat.total_ms", latency_ms)
         return self.persist(avatar_id, message, prepared, reply, latency_ms)
 
-    def stream(self, avatar_id: str, message: str, preview_mode: bool = False) -> tuple[str, Iterator[dict[str, Any]]]:
-        prepared = self.prepare(avatar_id, message, preview_mode)
+    def stream(self, avatar_id: str, message: str, preview_mode: bool = False, source_message_id: int = 0) -> tuple[str, Iterator[dict[str, Any]]]:
+        prepared = self.prepare(avatar_id, message, preview_mode, source_message_id)
         client = prepared["client"]
         run_id, cancelled = self.runs.start(avatar_id, "chat")
 
@@ -214,6 +232,7 @@ class ChatService:
                         yield {"type": "cancelled", "run_id": run_id}
                         return
                     text = str(chunk)
+                    text = text[:max(0, 80 - sum(len(p) for p in parts))]
                     if not text:
                         continue
                     if not parts:
@@ -221,6 +240,8 @@ class ChatService:
                         self.metrics.observe("chat.first_text_ms", first_chunk_ms)
                     parts.append(text)
                     yield {"type": "delta", "run_id": run_id, "text": text}
+                    if sum(len(p) for p in parts) >= 80:
+                        break
                 reply = "".join(parts).strip()
                 if not reply:
                     raise ProviderError("模型没有返回文本")

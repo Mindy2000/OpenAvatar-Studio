@@ -81,7 +81,7 @@ def get_proactive_rules(db: Database, avatar_id: str) -> dict[str, Any]:
     ensure_proactive_rules(db, avatar_id)
     row = db.one("SELECT * FROM proactive_rules WHERE avatar_id=?", (avatar_id,)) or {}
     return {
-        "daily_max": int(row.get("daily_max") or DEFAULT_RULES["daily_max"]),
+        "daily_max": int(row.get("daily_max", DEFAULT_RULES["daily_max"])),
         "allowed_windows": json.loads(str(row.get("allowed_windows_json") or "[]")),
         "quiet_hours": json.loads(str(row.get("quiet_hours_json") or "{}")),
         "topic_scope": json.loads(str(row.get("topic_scope_json") or "[]")),
@@ -120,7 +120,7 @@ def update_proactive_rules(db: Database, avatar_id: str, payload: dict[str, Any]
         WHERE avatar_id=?
         """,
         (
-            min(max(int(payload.get("daily_max") or 2), 0), 24),
+            min(max(int(payload.get("daily_max", DEFAULT_RULES["daily_max"])), 0), 24),
             json.dumps(allowed_windows[:8], ensure_ascii=False),
             json.dumps(quiet_hours, ensure_ascii=False),
             json.dumps([str(item)[:80] for item in topic_scope[:20]], ensure_ascii=False),

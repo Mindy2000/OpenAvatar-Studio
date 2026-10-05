@@ -37,7 +37,7 @@ New service-hub connections and capability routes are not migrated as a ready-to
 | Audio | Exclude imported/generated audio files, transcripts, and voice provider assets; some voice-profile metadata remains |
 | Images | Exclude images and keyframe files; empty visual records, sets, scenes, keyframes, and related visual/video reviews |
 | Video | Exclude generated video files, keyframe records, video assets/reviews; the independent image option still affects keyframe files |
-| Call history | Empty realtime sessions/turns; does not replace the conversation option |
+| Call history | Omit call cards, voice_call transcripts, sessions/turns, all reply diagnostics, and synthesized audio; ordinary chats and original recordings follow the conversation/audio options |
 
 API parameters are `include_conversations`, `include_audio`, `include_images`, `include_video`, and `include_call_history`. The UI sends all five. For older clients omitting `include_video`, it follows the image option.
 
@@ -59,3 +59,7 @@ Packages do not export the complete `chat_timeline_branches` and `historical_mem
 Registered visual asset APIs accept `candidate`, `approved`, `canonical`, `rejected`, and `retired`. `draft` in blank character templates refers to a settings draft, not a writable registered-asset state. Candidates must not serve as canonical identity references before approval.
 
 Readiness levels are `required`, `recommended`, and `advanced`. World reality kinds include `real_verified`, `user_confirmed`, `fictional_canon`, `fictional_runtime`, and `hybrid_derived`; mutability includes `locked`, `approval_only`, `evolving`, and `historical`.
+
+## Call-history export scope (2026-10-05)
+
+Fixed on 2026-10-05: main chat and history search hide voice_call transcripts while retaining call cards; local transcripts remain available to model context. Disabling call-history export excludes call cards, voice_call messages, sessions/turns, and all reply diagnostics. Legacy synthesized audio cannot distinguish calls from auditions, so all generated/audio files are also omitted. Original recordings and voice-note attachments follow the audio option. This does not delete local data or independently authored persona settings or memories. Imported usage remains marked imported_history to avoid counting historical consumption against current budgets.

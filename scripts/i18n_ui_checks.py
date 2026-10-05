@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 from pathlib import Path
 
@@ -14,6 +15,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
     args = parser.parse_args()
+    output = Path(os.environ.get("OPENAVATAR_SCREENSHOT_DIR", "output"))
+    output.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
@@ -120,8 +123,7 @@ def main() -> None:
         assert page.request.get(f"{args.base_url}/api/avatars/{avatars[-1]}").json()["avatar_primary_language"] == "zh-CN"
         page.evaluate("async () => { await openSettings(); }")
         english("#settingsDialog")
-        Path("output").mkdir(exist_ok=True)
-        page.screenshot(path="output/english-settings.png", full_page=True)
+        page.screenshot(path=str(output / "english-settings.png"), full_page=True)
         page.set_viewport_size({"width": 390, "height": 844})
         page.locator('.settings-tabs').scroll_into_view_if_needed()
         assert page.locator('.settings-tabs').bounding_box()['height'] >= 44
@@ -129,7 +131,7 @@ def main() -> None:
         assert page.locator('#ocrSettingsPanel').is_visible()
         english('#ocrSettingsPanel')
         page.locator('[data-settings-tab="providerHubPanel"]').click()
-        page.screenshot(path="output/english-settings-mobile.png", full_page=True)
+        page.screenshot(path=str(output / "english-settings-mobile.png"), full_page=True)
         english("#settingsDialog")
         page.evaluate("language => setInterfaceLanguage(language)", "zh-CN")
         assert not errors, errors

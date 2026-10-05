@@ -37,6 +37,12 @@ DEVELOPMENT_VOICES = [
     },
 ]
 
+MINIMAX_PRESET_VOICES = [
+    {"voice_id": "female-chengshu", "voice_name": "MiniMax · 成熟女性（预置）"},
+    {"voice_id": "female-tianmei", "voice_name": "MiniMax · 甜美女性（预置）"},
+    {"voice_id": "male-qn-jingying", "voice_name": "MiniMax · 精英青年（预置）"},
+]
+
 
 def list_development_voices() -> list[dict[str, Any]]:
     return [dict(item) for item in DEVELOPMENT_VOICES]
@@ -44,11 +50,9 @@ def list_development_voices() -> list[dict[str, Any]]:
 
 def ensure_voice_choices(db: Database, avatar_id: str) -> None:
     existing = db.one("SELECT id FROM voice_profiles WHERE avatar_id=?", (avatar_id,))
-    if existing:
-        return
     now = int(time.time())
     with db.transaction() as connection:
-        for index, voice in enumerate(DEVELOPMENT_VOICES):
+        for index, voice in enumerate([] if existing else DEVELOPMENT_VOICES):
             connection.execute(
                 "INSERT INTO voice_profiles(avatar_id,provider,voice_id,voice_name,profile_kind,status,model,metadata_json,active,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
                 (
@@ -64,6 +68,17 @@ def ensure_voice_choices(db: Database, avatar_id: str) -> None:
                     now,
                 ),
             )
+        for voice in MINIMAX_PRESET_VOICES:
+            present = connection.execute(
+                "SELECT id FROM voice_profiles WHERE avatar_id=? AND provider='minimax' AND profile_kind='builtin_tts' AND voice_id=?",
+                (avatar_id, voice["voice_id"]),
+            ).fetchone()
+            if not present:
+                connection.execute(
+                    "INSERT INTO voice_profiles(avatar_id,provider,voice_id,voice_name,profile_kind,status,model,metadata_json,active,created_at) VALUES(?,?,?,?,?,?,?,?,0,?)",
+                    (avatar_id, "minimax", voice["voice_id"], voice["voice_name"], "builtin_tts", "candidate", "speech-2.8-hd",
+                     json.dumps({"source_policy": "synthetic_or_builtin_only"}), now),
+                )
 
 
 def select_voice_profile(db: Database, avatar_id: str, profile_id: int) -> dict[str, Any]:
