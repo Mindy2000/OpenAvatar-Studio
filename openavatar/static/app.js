@@ -13,7 +13,7 @@ document.addEventListener("click", async event => {
       state.currentImport.preview = await api(`/api/avatars/${state.currentId}/imports/${state.currentImport.id}/text`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:$("#manualImageText").value})});
       renderImportReview(); return;
     }
-    if (avatar) return openAvatar(avatar);
+    if (avatar) return await openAvatar(avatar);
     if (step) return goStep(Number(step));
     if (tab) return selectTab(tab);
     if (historyKind) {

@@ -169,10 +169,15 @@ async function loadEvidence() {
   </article>`).join("");
 }
 
+let messagesLoadGeneration = 0;
+
 async function loadMessages() {
   const avatarId = state.currentId;
-  const rows = await api(`/api/avatars/${avatarId}/messages?timeline_kind=${state.previewMode ? "preview" : "official"}`);
-  if (state.currentId !== avatarId) return;
+  if (!avatarId) return;
+  const preview = !!state.previewMode;
+  const generation = ++messagesLoadGeneration;
+  const rows = await api(`/api/avatars/${avatarId}/messages?timeline_kind=${preview ? "preview" : "official"}`);
+  if (generation !== messagesLoadGeneration || state.currentId !== avatarId || !!state.previewMode !== preview) return;
   const list = $("#messageList");
   const signature = JSON.stringify([avatarId, state.previewMode, state.interfaceLanguage, rows]);
   if (list.dataset.signature === signature && !list.querySelector("[data-stream-text]")) return;

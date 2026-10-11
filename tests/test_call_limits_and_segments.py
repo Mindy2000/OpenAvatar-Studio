@@ -78,6 +78,23 @@ def test_complete_sentences_early_and_at_most_three_segments():
     assert sum(len(x) for x in split.push('甲' * 100, final=True)) == 80
 
 
+def test_chunk_boundary_does_not_turn_decimal_point_into_sentence():
+    split = SentenceSegments()
+    assert split.push('路程是1.') == []
+    assert split.push('5公里。') == ['路程是1.5公里。']
+    split = SentenceSegments()
+    assert split.push('Walk 1.') == []
+    assert split.push('5 miles. Then rest.') == ['Walk 1.5 miles.']
+    assert split.push('', final=True) == [' Then rest.']
+
+
+def test_period_at_chunk_end_waits_for_space_or_final_boundary():
+    split = SentenceSegments()
+    assert split.push('Hello.') == []
+    assert split.push(' How are you?') == ['Hello.', ' How are you?']
+    assert split.push('', final=True) == []
+
+
 def test_server_rejects_invalid_configuration_before_start(tmp_path, monkeypatch):
     with make_client(tmp_path, monkeypatch) as client:
         avatar = create_avatar(client)
@@ -377,3 +394,107 @@ def test_active_voice_plan_rechecks_same_connection_permissions_and_price(tmp_pa
             assert ended['estimated_reserved_cny'] == 0
         assert not invoked
         assert len(db.all('SELECT * FROM realtime_call_turns')) == (1 if change == 'revoke-before-tts' else 0)
+
+
+@pytest.mark.parametrize('outcome', ['interrupted', 'failed'])
+def test_pending_speech_counts_towards_connection_budget_before_completion(tmp_path, monkeypatch, outcome):
+    from openavatar.services.provider_hub import assert_allowed, connection_row
+    blocked, release = threading.Event(), threading.Event()
+
+    def slow_speech():
+        blocked.set()
+        release.wait(5)
+        if outcome == 'failed':
+            raise ProviderError('isolated provider failure')
+
+    invoked = stub_costs(monkeypatch, synthesize=slow_speech)
+    monkeypatch.setattr(calls, 'assert_allowed', assert_allowed)
+    with make_client(tmp_path, monkeypatch) as client:
+        avatar = create_avatar(client)
+        connection = configured_voice(client, avatar)
+        db = client.app.state.db
+        # One reply costs .1, up to three speech segments cost .3. A pending
+        # segment must count, even after interruption, before the next .4 check.
+        db.execute('UPDATE provider_connections SET budget_json=? WHERE id=?',
+                   ('{"daily":0.51}', connection['id']))
+        row = connection_row(db, connection['id'])
+        monkeypatch.setattr(calls, 'select_call_chat', lambda prepared: (prepared['client'], row, .1))
+        with client.websocket_connect(f'/ws/avatars/{avatar}/call?voice=true') as ws:
+            started = ws.receive_json()
+            ws.send_json({'type': 'user.text', 'text': '第一轮'})
+            segment = until(ws, 'assistant.segment')
+            until(ws, 'assistant.done')
+            payload = {'token': started['token'], 'run_id': segment['run_id'], 'segment_id': 0}
+            path = f"/api/avatars/{avatar}/calls/{started['call_id']}/speech"
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pending = pool.submit(client.post, path, json=payload)
+                try:
+                    assert blocked.wait(2)
+                    reserved = db.one("SELECT * FROM usage_events WHERE operation='tts'")
+                    assert reserved and reserved['status'] == 'reserved'
+                    assert reserved['estimated_cost'] == .1
+                    ws.send_json({'type': 'call.interrupt'})
+                    ws.send_json({'type': 'user.text', 'text': '第二轮'})
+                    while True:
+                        event = ws.receive_json()
+                        if event['type'] in {'call.ended', 'assistant.done'}:
+                            break
+                    assert event['type'] == 'call.ended', event
+                    assert '预算' in event['message']
+                    release.set()
+                    assert pending.result(timeout=3).status_code == 409
+                finally:
+                    release.set()
+        records = db.all("SELECT * FROM usage_events WHERE json_extract(metadata_json,'$.estimate_reserved')=1 ORDER BY id")
+        assert len(records) == 2, 'update each reservation rather than inserting a second expense'
+        assert [record['status'] for record in records] == ['ok', 'interrupted_or_failed']
+        assert sum(record['estimated_cost'] for record in records) == .2
+        assert len(invoked) == 1
+        assert len(db.all('SELECT * FROM realtime_call_turns')) == 1
+
+        from openavatar.services.provider_hub import _spent
+        package = client.post(f'/api/avatars/{avatar}/export')
+        imported = client.post('/api/packages/import', content=package.content, headers={
+            'Content-Type': 'application/zip', 'X-File-Name': 'call-budget.zip', 'X-Rights-Confirmed': 'true'})
+        assert imported.status_code == 201, imported.text
+        assert _spent(db, connection['id'], 0) == .2
+        copied = db.all("SELECT * FROM usage_events WHERE avatar_id=? AND json_extract(metadata_json,'$.estimate_reserved')=1",
+                        (imported.json()['id'],))
+        assert len(copied) == 2
+        assert all(json.loads(record['metadata_json'])['imported_history'] for record in copied)
+
+
+def test_interrupted_chat_updates_existing_pending_reservation(tmp_path, monkeypatch):
+    blocked, release = threading.Event(), threading.Event()
+
+    def slow_reply(self, messages):
+        yield '开头'
+        blocked.set()
+        release.wait(5)
+        yield '旧回复'
+
+    stub_costs(monkeypatch, chat_cost=.3)
+    monkeypatch.setattr(FakeStreamingProvider, 'stream_chat', slow_reply)
+    with make_client(tmp_path, monkeypatch) as client:
+        avatar = create_avatar(client)
+        db = client.app.state.db
+        try:
+            with client.websocket_connect(f'/ws/avatars/{avatar}/call') as ws:
+                ws.receive_json()
+                ws.send_json({'type': 'user.text', 'text': '开始'})
+                until(ws, 'assistant.delta')
+                assert blocked.wait(2)
+                record = db.one('SELECT * FROM usage_events')
+                assert record['status'] == 'reserved' and record['estimated_cost'] == .3
+                ws.send_json({'type': 'call.interrupt'})
+                until(ws, 'assistant.interrupted')
+                ws.send_json({'type': 'ping'})
+                until(ws, 'pong')
+                completed = db.one('SELECT * FROM usage_events')
+                assert completed['id'] == record['id']
+                assert completed['status'] == 'interrupted_or_failed'
+                assert completed['estimated_cost'] == .3
+                assert len(db.all('SELECT * FROM usage_events')) == 1
+                ws.send_json({'type': 'call.end'})
+        finally:
+            release.set()

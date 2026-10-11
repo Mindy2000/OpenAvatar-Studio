@@ -32,9 +32,20 @@ function fixture() {
   function segment(n, run = 'run') { controller.receive({type:'assistant.segment', run_id:run, segment_id:n, text:'句子。'}); }
   function done(run = 'run') { controller.receive({type:'assistant.done', run_id:run, reply:'完成。'}); }
   function respond(n) { requests[n].resolve({ok:true, blob:async () => ({})}); }
-  return {controller, requests, audios, revoked, sent, statuses, turn, segment, done, respond};
+  return {controller, requests, audios, revoked, sent, statuses, turn, segment, done, respond,
+    recognitionLanguage:context.voiceRecognitionLanguage};
 }
 (async () => {
+  {
+    const f = fixture();
+    for (const value of ['en-US', 'en', 'English', 'en-GB', 'en_US']) {
+      assert.equal(f.recognitionLanguage(value), 'en-US', 'English avatars use English recognition');
+    }
+    for (const value of ['zh-CN', 'bilingual', 'custom', undefined]) {
+      assert.equal(f.recognitionLanguage(value), 'zh-CN', 'existing default stays Chinese');
+    }
+    f.controller.end();
+  }
   {
     const f = fixture(); f.turn(); f.segment(0); f.segment(1); f.segment(0);
     assert.equal(f.requests.length, 1, 'sequential synthesis, deduplicated first segment');
@@ -95,5 +106,5 @@ function fixture() {
     assert.ok(fullSource.includes("window.addEventListener('beforeunload', endVoiceCall)"));
     assert.ok(!fullSource.includes("document.addEventListener('visibilitychange'"), 'switching tabs does not hang up');
   }
-  console.log('Voice call controller: 5 local scenarios passed (ordered early speech, interruption, no retries, limits, cleanup).');
+  console.log('Voice call controller: 6 local scenarios passed (language, ordered early speech, interruption, no retries, limits, cleanup).');
 })().catch(error => { console.error(error); process.exitCode = 1; });

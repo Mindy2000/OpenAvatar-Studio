@@ -9,7 +9,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from openavatar.application import ApplicationContext
-from openavatar.services.memory_intelligence import rebuild_memory_graph, merged_memory_ids
+from openavatar.services.memory_intelligence import (
+    deactivate_merged_memories, exclude_chat_message_context, exclude_memory_chat_context,
+    merged_memory_ids, rebuild_memory_graph,
+)
 from openavatar.services.persona_core import build_persona_core
 
 
@@ -66,8 +69,6 @@ def create_chat_memory_router(context: ApplicationContext) -> APIRouter:
         if payload.action != "forget" and not content:
             raise HTTPException(400, "请填写要记住的内容")
         now = int(time.time())
-        linked = db.one("SELECT id FROM memories WHERE avatar_id=? AND origin_kind='runtime_chat' AND source_message_id=? ORDER BY id DESC LIMIT 1", (avatar_id, message_id))
-        derived = merged_dependents(avatar_id, linked["id"]) if linked else []
         with db.transaction() as connection:
             previous = connection.execute(
                 "SELECT * FROM memories WHERE avatar_id=? AND origin_kind='runtime_chat' "
@@ -93,19 +94,14 @@ def create_chat_memory_router(context: ApplicationContext) -> APIRouter:
                 )
                 memory_id = cursor.lastrowid
             # A merged copy must not keep the old fact alive after its source changes.
-            for parent in derived:
-                connection.execute("UPDATE memories SET confidence=0,kind='rejected' WHERE id=? AND avatar_id=?", (parent["id"], avatar_id))
-                after = {**parent, "confidence": 0, "kind": "rejected"}
-                connection.execute("INSERT INTO memory_revisions(avatar_id,memory_id,before_json,after_json,action,note,created_at) VALUES(?,?,?,?,?,?,?)",
-                                   (avatar_id, parent["id"], json.dumps(parent, ensure_ascii=False), json.dumps(after, ensure_ascii=False),
-                                    "source_changed", f"聊天来源 #{message_id} 已修改或停用，合并记忆同时停用", now))
+            linked_ids = {item["id"] for item in connection.execute(
+                "SELECT id FROM memories WHERE avatar_id=? AND origin_kind='runtime_chat' AND source_message_id=?", (avatar_id, message_id),
+            )}
+            deactivate_merged_memories(connection, avatar_id, linked_ids, now, f"聊天来源 #{message_id} 已修改或停用，合并记忆同时停用")
             if payload.action in {"correct", "forget"}:
                 # Avoid reintroducing the old fact through its original message or same-turn echo.
-                connection.execute("UPDATE messages SET context_excluded=1 WHERE avatar_id=? AND id=?",
-                                   (avatar_id, message_id))
-                if row["turn_id"]:
-                    connection.execute("UPDATE messages SET context_excluded=1 WHERE avatar_id=? AND turn_id=?",
-                                       (avatar_id, row["turn_id"]))
+                exclude_memory_chat_context(connection, avatar_id, linked_ids)
+                exclude_chat_message_context(connection, avatar_id, message_id)
             after_row = connection.execute("SELECT * FROM memories WHERE id=?", (memory_id,)).fetchone()
             connection.execute(
                 "INSERT INTO memory_revisions(avatar_id,memory_id,before_json,after_json,action,note,created_at) "

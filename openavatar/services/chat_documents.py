@@ -44,6 +44,7 @@ ERRORS = {
     "busy": "另一个文件问题正在处理，请等待完成；不会自动重试。",
     "request_reused": "此请求编号已用于其他问题或文件版本。请重新确认后发送。",
     "already_attempted": "此请求已处理或失败，未再次调用服务。若要重试，请重新点击确认。",
+    "conversation_changed": "当前文件或对话已被修改、回退或停用，本次回复未写入聊天；已开始的服务调用可能仍计费。请重新选择文件。",
     "provider_failed": "文件提问未完成，未自动重试或切换服务。请检查连接后重新点击确认。",
 }
 
@@ -244,6 +245,40 @@ def _save_question_state(context, message_id, metadata):
     context.db.execute("UPDATE messages SET attachment_json=? WHERE id=?", (json.dumps(metadata, ensure_ascii=False), message_id))
 
 
+def _cached_turn_is_current(context: ApplicationContext, avatar_id: str, channel: str,
+                            result: Any) -> bool:
+    """A cache is usable only while its original, unchanged question/answer is active."""
+    if not isinstance(result, dict) or not result.get("turn_id"):
+        return False
+    rows = context.db.all(
+        "SELECT * FROM messages WHERE avatar_id=? AND channel=? AND turn_id=? ORDER BY id",
+        (avatar_id, channel, result["turn_id"]),
+    )
+    if len(rows) != 2 or [row["role"] for row in rows] != ["user", "assistant"]:
+        return False
+    if any(row.get("context_excluded") for row in rows):
+        return False
+    question, answer = rows
+    metadata = attachment_meta(question)
+    attempt = metadata.get("document_question", {})
+    source = metadata.get("document_source", {})
+    if not isinstance(attempt, dict) or not isinstance(source, dict):
+        return False
+    # Timeline editing preserves metadata, so checking the turn ID alone is insufficient.
+    expected_question = f"[文件：{source.get('name', '')}] {attempt.get('question', '')}"
+    return (attempt.get("status") == "done" and question["content"] == expected_question
+            and answer["content"] == result.get("reply"))
+
+
+def _document_still_current(context: ApplicationContext, row: dict[str, Any]) -> bool:
+    current = context.db.one("SELECT * FROM messages WHERE avatar_id=? AND id=?",
+                             (row["avatar_id"], row["id"]))
+    return bool(current and current["channel"] == row["channel"]
+                and current["content"] == row["content"]
+                and not current.get("context_excluded")
+                and attachment_meta(current).get("stored_name") == attachment_meta(row).get("stored_name"))
+
+
 def read_document(context: ApplicationContext, row: dict[str, Any], *, question: str, request_id: str) -> dict[str, Any]:
     from fastapi import HTTPException
     from openavatar.local_model import LocalModelError
@@ -273,13 +308,15 @@ def read_document(context: ApplicationContext, row: dict[str, Any], *, question:
         if (attempt.get("digest") != digest or attempt.get("question") != question
                 or attempt.get("avatar_id") != avatar_id or previous["channel"] != row["channel"]):
             raise document_error("request_reused", 409)
-        if attempt.get("status") == "done":
+        if (attempt.get("status") == "done"
+                and _cached_turn_is_current(context, avatar_id, row["channel"], attempt.get("result"))):
             return {**attempt["result"], "cached": True}
         raise document_error("already_attempted", 409)
     saved = meta.get("document", {})
     if (question == DEFAULT_QUESTION and isinstance(saved, dict) and saved.get("digest") == digest
             and saved.get("status") == "done" and saved.get("avatar_id") == avatar_id
-            and saved.get("channel") == row["channel"]):
+            and saved.get("channel") == row["channel"]
+            and _cached_turn_is_current(context, avatar_id, row["channel"], saved.get("result"))):
         # Only cache the default summary; explicit follow-up questions get their own turn.
         return {**saved["result"], "cached": True, "source": {**saved["result"]["source"], "message_id": row["id"], "name": name}}
     extracted = extract_text(data, suffix)
@@ -311,10 +348,15 @@ def read_document(context: ApplicationContext, row: dict[str, Any], *, question:
               "pages": extracted["pages"], "empty_pages": extracted["empty_pages"], "text_layer_only": suffix == ".pdf"}
     attempt = {"status": "pending", "digest": digest, "question": question, "avatar_id": avatar_id}
     question_meta = {"document_source": source, "document_question": attempt}
-    question_id = context.db.execute(
-        "INSERT INTO messages(avatar_id,role,content,channel,created_at,client_key,attachment_json) VALUES(?,?,?,?,?,?,?)",
-        (avatar_id, "user", visible_question, row["channel"], int(time.time()), client_key, json.dumps(question_meta, ensure_ascii=False)),
-    )
+    # Reuse the database's reentrant serialization lock: timeline changes and deletions
+    # must not slip between validating the source and inserting its question.
+    with context.db._lock:
+        if not _document_still_current(context, row):
+            raise document_error("conversation_changed", 409)
+        question_id = context.db.execute(
+            "INSERT INTO messages(avatar_id,role,content,channel,created_at,client_key,attachment_json) VALUES(?,?,?,?,?,?,?)",
+            (avatar_id, "user", visible_question, row["channel"], int(time.time()), client_key, json.dumps(question_meta, ensure_ascii=False)),
+        )
     # The existing persist method can attach its reply to this already-created user turn.
     prepared["source_message_id"] = question_id
     started = time.perf_counter()
@@ -330,19 +372,32 @@ def read_document(context: ApplicationContext, row: dict[str, Any], *, question:
                      latency_ms=round((time.perf_counter() - started) * 1000), metadata={"error_type": type(exc).__name__})
         raise document_error("provider_failed", 502) from exc
     latency = round((time.perf_counter() - started) * 1000)
-    result = context.chat.persist(avatar_id, visible_question, prepared, reply, latency)
-    context.metrics.observe("chat.document_ms", latency)
-    result.update({"source": source, "cached": False})
-    attempt.update({"status": "done", "result": result})
-    _save_question_state(context, question_id, question_meta)
-    context.db.execute("UPDATE messages SET attachment_json=? WHERE avatar_id=? AND turn_id=? AND role='assistant'",
-                       (json.dumps({"document_source": source}, ensure_ascii=False), avatar_id, result["turn_id"]))
-    # Keep only summary cache on the original file; extracted text is never stored in chat history.
-    if question == DEFAULT_QUESTION:
-        meta["document"] = {"status": "done", "digest": digest, "result": result,
-                            "avatar_id": avatar_id, "channel": row["channel"]}
-    elif not meta.get("document"):
-        meta["document"] = {"status": "read"}
-    context.db.execute("UPDATE messages SET attachment_json=? WHERE avatar_id=? AND id=?",
-                       (json.dumps(meta, ensure_ascii=False), avatar_id, row["id"]))
+    # Never hold this lock during parsing or a service call. Once a reply arrives,
+    # validate and persist as one serialized operation against timeline mutations.
+    with context.db._lock:
+        pending = context.db.one("SELECT * FROM messages WHERE avatar_id=? AND id=?",
+                                 (avatar_id, question_id))
+        if (not pending or pending["client_key"] != client_key or pending["channel"] != row["channel"]
+                or pending["content"] != visible_question or pending.get("context_excluded")
+                or not _document_still_current(context, row)):
+            if context.db.one("SELECT id FROM avatars WHERE id=?", (avatar_id,)):
+                record_usage(context.db, avatar_id, provider=prepared["config"].provider_name, model=client.model,
+                             role="chat", operation="chat_document", status="discarded", latency_ms=latency,
+                             metadata={"reason": "conversation_changed"})
+            raise document_error("conversation_changed", 409)
+        result = context.chat.persist(avatar_id, visible_question, prepared, reply, latency)
+        context.metrics.observe("chat.document_ms", latency)
+        result.update({"source": source, "cached": False})
+        attempt.update({"status": "done", "result": result})
+        _save_question_state(context, question_id, question_meta)
+        context.db.execute("UPDATE messages SET attachment_json=? WHERE avatar_id=? AND turn_id=? AND role='assistant'",
+                           (json.dumps({"document_source": source}, ensure_ascii=False), avatar_id, result["turn_id"]))
+        # Keep only summary cache on the original file; extracted text is never stored in chat history.
+        if question == DEFAULT_QUESTION:
+            meta["document"] = {"status": "done", "digest": digest, "result": result,
+                                "avatar_id": avatar_id, "channel": row["channel"]}
+        elif not meta.get("document"):
+            meta["document"] = {"status": "read"}
+        context.db.execute("UPDATE messages SET attachment_json=? WHERE avatar_id=? AND id=?",
+                           (json.dumps(meta, ensure_ascii=False), avatar_id, row["id"]))
     return result

@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path, PureWindowsPath
 
 from openavatar.db import Database
+from openavatar.services.memory_intelligence import merged_memory_ids
 from openavatar.services.world_regions import avatar_language_profile
 
 
@@ -269,11 +270,23 @@ def export_avatar(
         messages = []
         # These auxiliary records can contain verbatim chat inputs and replies.
         decision_explanations = []
+        private_memory_ids = {row["id"] for row in memories if str(row.get("kind")) in {"conversation", "imported", "chat_note"} or row.get("origin_kind") == "runtime_chat"}
+        # Timeline rollback may delete the source note while leaving a retired
+        # merged copy. Its revision snapshots still establish private provenance.
+        for revision in memory_revisions:
+            for field in ("before_json", "after_json"):
+                try:
+                    snapshot = json.loads(revision.get(field) or "{}")
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(snapshot, dict) and (snapshot.get("origin_kind") == "runtime_chat" or snapshot.get("kind") in {"conversation", "imported", "chat_note"}):
+                    private_memory_ids.add(revision["memory_id"])
         memory_revisions = []
         memory_graph_nodes = []
         memory_graph_edges = []
         persona_core = {}
-        memories = [row for row in memories if str(row.get("kind")) not in {"conversation", "imported", "chat_note"} and row.get("origin_kind") != "runtime_chat"]
+        private_memory_ids = merged_memory_ids(db, avatar_id, private_memory_ids)
+        memories = [row for row in memories if row["id"] not in private_memory_ids]
         evidence = [row for row in evidence if str(row.get("source_type")) not in {"real_conversation", "real_avatar_utterances", "real_image_ocr"}]
         imports = [row for row in imports if str(row.get("category")) != "conversation"]
     if not include_audio:

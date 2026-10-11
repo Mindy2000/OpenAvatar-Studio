@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import time
 from collections import Counter, defaultdict
 from typing import Any
@@ -63,10 +64,6 @@ def memory_graph(db: Database, avatar_id: str, limit: int = 80) -> dict[str, Any
 
 
 def revise_memory(db: Database, avatar_id: str, memory_id: int, patch: dict[str, Any], *, action: str = "edit", note: str = "") -> dict[str, Any]:
-    row = db.one("SELECT * FROM memories WHERE id=? AND avatar_id=?", (memory_id, avatar_id))
-    if not row:
-        raise KeyError("记忆不存在")
-    before = dict(row)
     fields = []
     params: list[Any] = []
     allowed = {"speaker", "content", "kind", "is_avatar", "confidence"}
@@ -79,14 +76,27 @@ def revise_memory(db: Database, avatar_id: str, memory_id: int, patch: dict[str,
             if key == "confidence":
                 value = min(max(float(value), 0), 1)
             params.append(value)
-    if fields:
-        params.append(memory_id)
-        db.execute(f"UPDATE memories SET {', '.join(fields)} WHERE id=?", tuple(params))
-    after = db.one("SELECT * FROM memories WHERE id=?", (memory_id,)) or {}
-    db.execute(
-        "INSERT INTO memory_revisions(avatar_id,memory_id,before_json,after_json,action,note,created_at) VALUES(?,?,?,?,?,?,?)",
-        (avatar_id, memory_id, json.dumps(before, ensure_ascii=False), json.dumps(after, ensure_ascii=False), action[:80], note[:1000], int(time.time())),
-    )
+    with db.transaction() as connection:
+        row = connection.execute("SELECT * FROM memories WHERE id=? AND avatar_id=?", (memory_id, avatar_id)).fetchone()
+        if not row:
+            raise KeyError("记忆不存在")
+        before = dict(row)
+        if fields:
+            params.append(memory_id)
+            connection.execute(f"UPDATE memories SET {', '.join(fields)} WHERE id=?", tuple(params))
+        after = dict(connection.execute("SELECT * FROM memories WHERE id=?", (memory_id,)).fetchone())
+        now = int(time.time())
+        # Maintenance edits must have the same context guarantees as the chat controls.
+        # Internal merge operations retain their source; they are not a correction.
+        if action not in {"merge", "merged_duplicate"} and (
+            after["content"] != before["content"] or after["confidence"] <= 0 or after["kind"] == "rejected"
+        ):
+            exclude_memory_chat_context(connection, avatar_id, {memory_id})
+            deactivate_merged_memories(connection, avatar_id, {memory_id}, now, f"记忆 #{memory_id} 已修改或停用，合并记忆同时停用")
+        connection.execute(
+            "INSERT INTO memory_revisions(avatar_id,memory_id,before_json,after_json,action,note,created_at) VALUES(?,?,?,?,?,?,?)",
+            (avatar_id, memory_id, json.dumps(before, ensure_ascii=False), json.dumps(after, ensure_ascii=False), action[:80], note[:1000], now),
+        )
     return after
 
 
@@ -102,17 +112,59 @@ def review_memory(db: Database, avatar_id: str, memory_id: int, action: str, not
 
 def merged_memory_ids(db: Database, avatar_id: str, source_ids: set[int]) -> set[int]:
     """Follow recorded merge provenance, including inactive intermediate notes."""
+    with db.transaction() as connection:
+        return related_merged_memory_ids(connection, avatar_id, source_ids)
+
+
+def related_merged_memory_ids(connection: sqlite3.Connection, avatar_id: str, source_ids: set[int], *, ancestors: bool = False) -> set[int]:
     edges = []
-    for row in db.all("SELECT memory_id,note FROM memory_revisions WHERE avatar_id=? AND action='merge'", (avatar_id,)):
+    for row in connection.execute("SELECT memory_id,note FROM memory_revisions WHERE avatar_id=? AND action='merge'", (avatar_id,)):
         match = re.fullmatch(r"合并 duplicate #(\d+)", row["note"])
         if match:
-            edges.append((int(match.group(1)), row["memory_id"]))
+            child, parent = int(match.group(1)), row["memory_id"]
+            edges.append((parent, child) if ancestors else (child, parent))
     reached = set(source_ids)
     while True:
         parents = {parent for child, parent in edges if child in reached}
         if parents <= reached:
             return reached
         reached.update(parents)
+
+
+def exclude_memory_chat_context(connection: sqlite3.Connection, avatar_id: str, memory_ids: set[int]) -> None:
+    """Exclude originals and same-turn echoes, also for a merged note's sources."""
+    for memory_id in related_merged_memory_ids(connection, avatar_id, memory_ids, ancestors=True):
+        source = connection.execute(
+            "SELECT m.source_message_id FROM memories m JOIN messages s "
+            "ON s.id=m.source_message_id AND s.avatar_id=m.avatar_id "
+            "WHERE m.id=? AND m.avatar_id=? AND m.origin_kind='runtime_chat'", (memory_id, avatar_id),
+        ).fetchone()
+        if not source:
+            continue
+        exclude_chat_message_context(connection, avatar_id, source["source_message_id"])
+
+
+def exclude_chat_message_context(connection: sqlite3.Connection, avatar_id: str, message_id: int) -> None:
+    source = connection.execute("SELECT turn_id,channel FROM messages WHERE avatar_id=? AND id=?", (avatar_id, message_id)).fetchone()
+    if not source:
+        return
+    connection.execute("UPDATE messages SET context_excluded=1 WHERE avatar_id=? AND id=?", (avatar_id, message_id))
+    if source["turn_id"]:
+        connection.execute("UPDATE messages SET context_excluded=1 WHERE avatar_id=? AND turn_id=? AND channel=?", (avatar_id, source["turn_id"], source["channel"]))
+
+
+def deactivate_merged_memories(connection: sqlite3.Connection, avatar_id: str, source_ids: set[int], now: int, note: str, *, action: str = "source_changed") -> None:
+    for memory_id in sorted(related_merged_memory_ids(connection, avatar_id, source_ids) - source_ids):
+        row = connection.execute(
+            "SELECT * FROM memories WHERE avatar_id=? AND id=? AND confidence>0 AND kind NOT IN ('rejected','merged_duplicate')", (avatar_id, memory_id),
+        ).fetchone()
+        if not row:
+            continue
+        before = dict(row)
+        after = {**before, "confidence": 0, "kind": "rejected"}
+        connection.execute("UPDATE memories SET confidence=0,kind='rejected' WHERE id=? AND avatar_id=?", (memory_id, avatar_id))
+        connection.execute("INSERT INTO memory_revisions(avatar_id,memory_id,before_json,after_json,action,note,created_at) VALUES(?,?,?,?,?,?,?)",
+                           (avatar_id, memory_id, json.dumps(before, ensure_ascii=False), json.dumps(after, ensure_ascii=False), action, note, now))
 
 
 def merge_memories(db: Database, avatar_id: str, primary_id: int, duplicate_id: int) -> dict[str, Any]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -8,6 +9,10 @@ from typing import Any
 from uuid import uuid4
 
 from openavatar.db import Database
+from openavatar.services.memory_intelligence import (
+    deactivate_merged_memories, exclude_chat_message_context, exclude_memory_chat_context,
+    rebuild_memory_graph, related_merged_memory_ids,
+)
 
 
 def _now() -> int:
@@ -67,6 +72,14 @@ def _snapshot(connection: sqlite3.Connection, avatar_id: str, timeline_kind: str
         "SELECT * FROM memories WHERE avatar_id=? AND origin_kind='runtime_chat' AND timeline_kind=? ORDER BY id",
         (avatar_id, timeline_kind),
     )
+    runtime_ids = {row["id"] for row in memories}
+    derived_ids = related_merged_memory_ids(connection, avatar_id, runtime_ids) - runtime_ids
+    derived_memories = []
+    for memory_id in sorted(derived_ids):
+        row = connection.execute("SELECT * FROM memories WHERE avatar_id=? AND id=? AND origin_kind<>'runtime_chat'", (avatar_id, memory_id)).fetchone()
+        if row:
+            derived_memories.append(dict(row))
+    revision_id = connection.execute("SELECT COALESCE(MAX(id),0) FROM memory_revisions WHERE avatar_id=?", (avatar_id,)).fetchone()[0]
     world_events = _rows(
         connection,
         f"SELECT * FROM world_events WHERE avatar_id=? AND source_message_id IN ({placeholders}) ORDER BY id" if message_ids else
@@ -79,11 +92,13 @@ def _snapshot(connection: sqlite3.Connection, avatar_id: str, timeline_kind: str
         calls = _rows(connection, "SELECT * FROM realtime_call_sessions WHERE avatar_id=? ORDER BY id", (avatar_id,))
         turns = _rows(connection, "SELECT * FROM realtime_call_turns WHERE avatar_id=? ORDER BY id", (avatar_id,))
     return {
-        "version": 1,
+        "version": 2,
         "timeline_kind": timeline_kind,
         "messages": messages,
         "decision_explanations": decisions,
         "runtime_memories": memories,
+        "derived_memories": derived_memories,
+        "memory_revision_id": revision_id,
         "world_events": world_events,
         "call_sessions": calls,
         "call_turns": turns,
@@ -106,6 +121,30 @@ def _replace_with_snapshot(connection: sqlite3.Connection, avatar_id: str, timel
             f"SELECT id FROM messages WHERE avatar_id=? AND {_message_filter(timeline_kind)}", (avatar_id,)
         ).fetchall()
     ]
+    # A branch may contain copies of chat notes merged into an independent memory.
+    # Retire those copies while replacing the branch, then restore its saved copies.
+    runtime_ids = {row[0] for row in connection.execute(
+        "SELECT id FROM memories WHERE avatar_id=? AND origin_kind='runtime_chat' AND timeline_kind=?", (avatar_id, timeline_kind),
+    )}
+    current_related_ids = related_merged_memory_ids(connection, avatar_id, runtime_ids)
+    target_derived_ids = {row["id"] for row in snapshot.get("derived_memories", [])}
+    # If this branch introduced a merge into an independent fact, returning to a
+    # branch predating that merge must keep the independent, pre-merge content.
+    baseline_before_merge = {}
+    for revision in connection.execute("SELECT memory_id,note,before_json FROM memory_revisions WHERE avatar_id=? AND action='merge' ORDER BY id", (avatar_id,)):
+        memory_id = revision["memory_id"]
+        if memory_id not in current_related_ids - runtime_ids - target_derived_ids or memory_id in baseline_before_merge:
+            continue
+        match = re.fullmatch(r"合并 duplicate #(\d+)", revision["note"])
+        if not match or int(match.group(1)) not in current_related_ids:
+            continue
+        try:
+            before = json.loads(revision["before_json"])
+        except (ValueError, TypeError):
+            continue
+        if isinstance(before, dict) and before.get("id") == memory_id and before.get("avatar_id") == avatar_id and before.get("origin_kind") != "runtime_chat":
+            baseline_before_merge[memory_id] = before
+    deactivate_merged_memories(connection, avatar_id, runtime_ids, _now(), "切换时间线，停用当前聊天派生记忆", action="timeline_source_removed")
     if current_ids:
         placeholders = ",".join("?" for _ in current_ids)
         connection.execute(
@@ -127,6 +166,46 @@ def _replace_with_snapshot(connection: sqlite3.Connection, avatar_id: str, timel
     _insert_rows(connection, "messages", snapshot.get("messages", []))
     _insert_rows(connection, "decision_explanations", snapshot.get("decision_explanations", []))
     _insert_rows(connection, "memories", snapshot.get("runtime_memories", []))
+    restored_ids = {row["id"] for row in snapshot.get("runtime_memories", [])}
+    for row in [*baseline_before_merge.values(), *snapshot.get("derived_memories", [])]:
+        if row.get("avatar_id") != avatar_id or row.get("origin_kind") == "runtime_chat":
+            continue
+        current = connection.execute("SELECT id FROM memories WHERE id=? AND avatar_id=?", (row["id"], avatar_id)).fetchone()
+        if current:
+            columns = [key for key in row if key not in {"id", "avatar_id"}]
+            connection.execute(f"UPDATE memories SET {','.join(key + '=?' for key in columns)} WHERE id=? AND avatar_id=?", (*[row[key] for key in columns], row["id"], avatar_id))
+        else:
+            _insert_rows(connection, "memories", [row])
+        restored_ids.add(row["id"])
+    # Explicit corrections/stops made after a snapshot remain valid after restoring
+    # it. Branch housekeeping revisions are deliberately excluded from this replay.
+    revisions = connection.execute(
+        "SELECT memory_id,action,after_json,note FROM memory_revisions WHERE avatar_id=? AND id>? "
+        "AND action IN ('remember','correct','forget','edit','approve','downgrade','reject','source_changed') ORDER BY id",
+        (avatar_id, snapshot.get("memory_revision_id", 0)),
+    ).fetchall()
+    for revision in revisions:
+        if revision["action"] in {"correct", "forget"}:
+            match = re.fullmatch(r"用户在聊天消息 #(\d+) 中确认", revision["note"])
+            if match:
+                # Stop-use is also valid for messages never saved as a note.
+                exclude_chat_message_context(connection, avatar_id, int(match.group(1)))
+        memory_id = revision["memory_id"]
+        if memory_id not in restored_ids:
+            continue
+        try:
+            after = json.loads(revision["after_json"])
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(after, dict) or not after:
+            continue
+        columns = [key for key in ("speaker", "content", "kind", "is_avatar", "confidence") if key in after]
+        if not columns:
+            continue
+        before = connection.execute("SELECT content FROM memories WHERE id=? AND avatar_id=?", (memory_id, avatar_id)).fetchone()
+        connection.execute(f"UPDATE memories SET {','.join(key + '=?' for key in columns)} WHERE id=? AND avatar_id=?", (*[after[key] for key in columns], memory_id, avatar_id))
+        if revision["action"] in {"correct", "forget", "reject", "source_changed"} or after.get("confidence", 1) <= 0 or after.get("content", before["content"]) != before["content"]:
+            exclude_memory_chat_context(connection, avatar_id, {memory_id})
     _insert_rows(connection, "world_events", snapshot.get("world_events", []))
     if timeline_kind == "official":
         _insert_rows(connection, "realtime_call_sessions", snapshot.get("call_sessions", []))
@@ -315,6 +394,10 @@ def apply_change(db: Database, avatar_id: str, preview_token: str) -> dict[str, 
         if causal_ids:
             causal_ids = list(dict.fromkeys(causal_ids))
             placeholders = ",".join("?" for _ in causal_ids)
+            source_ids = {row[0] for row in connection.execute(
+                f"SELECT id FROM memories WHERE avatar_id=? AND origin_kind='runtime_chat' AND source_message_id IN ({placeholders})", (avatar_id, *causal_ids),
+            )}
+            deactivate_merged_memories(connection, avatar_id, source_ids, now, "聊天时间线已回退，派生合并记忆同时停用", action="timeline_source_removed")
             connection.execute(f"DELETE FROM decision_explanations WHERE avatar_id=? AND message_id IN ({placeholders})", (avatar_id, *causal_ids))
             connection.execute(f"DELETE FROM memories WHERE avatar_id=? AND origin_kind='runtime_chat' AND source_message_id IN ({placeholders})", (avatar_id, *causal_ids))
             connection.execute(f"DELETE FROM world_events WHERE avatar_id=? AND source_message_id IN ({placeholders})", (avatar_id, *causal_ids))
@@ -333,6 +416,7 @@ def apply_change(db: Database, avatar_id: str, preview_token: str) -> dict[str, 
         connection.execute("DELETE FROM chat_change_previews WHERE token=?", (preview_token,))
         connection.execute("UPDATE chat_timeline_branches SET updated_at=? WHERE id=?", (now, active))
         remaining = int(connection.execute(f"SELECT COUNT(*) FROM messages WHERE avatar_id=? AND {_message_filter(timeline_kind)}", (avatar_id,)).fetchone()[0])
+    rebuild_memory_graph(db, avatar_id)
     return {"ok": True, "active_branch_id": active, "frozen_branch_id": frozen, "remaining_messages": remaining, "impact": impact}
 
 
@@ -357,6 +441,7 @@ def restore_branch(db: Database, avatar_id: str, branch_id: str) -> dict[str, An
             "UPDATE chat_timeline_branches SET status='active',label=?,snapshot_json='{}',updated_at=? WHERE id=?",
             ("当前时间线" if timeline_kind == "official" else "当前预览时间线", now, branch_id),
         )
+    rebuild_memory_graph(db, avatar_id)
     return {"ok": True, "active_branch_id": branch_id, "frozen_branch_id": active, "swapped": True}
 
 

@@ -3,7 +3,9 @@ from __future__ import annotations
 import io
 import json
 import multiprocessing
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi import HTTPException
@@ -315,3 +317,134 @@ def test_desktop_dispatches_workers_before_argument_parsing(monkeypatch):
     monkeypatch.setattr(desktop.multiprocessing, 'freeze_support', dispatch)
     with pytest.raises(DispatchedWorker):
         desktop.main(['--multiprocessing-fork', 'parent_pid=123'])
+
+
+def test_summary_cache_does_not_survive_timeline_rewind(tmp_path, monkeypatch):
+    client, provider = client_for(tmp_path, monkeypatch)
+    with client:
+        avatar = create_avatar(client)
+        message = upload(client, avatar, b'Library opens at 9 AM.', 'schedule.txt').json()
+        first = read(client, avatar, message['id'])
+        assert first.status_code == 200
+        question = client.app.state.db.one(
+            "SELECT id FROM messages WHERE avatar_id=? AND turn_id=? AND role='user'",
+            (avatar, first.json()['turn_id']),
+        )
+        preview = client.post(f'/api/avatars/{avatar}/timeline/preview-change', json={
+            'action': 'delete', 'message_id': question['id'], 'timeline_kind': 'official',
+        })
+        assert preview.status_code == 200, preview.text
+        changed = client.post(f'/api/avatars/{avatar}/timeline/apply-change', json={
+            'preview_token': preview.json()['preview_token'],
+        })
+        assert changed.status_code == 200, changed.text
+        assert changed.json()['remaining_messages'] == 1
+        reread = read(client, avatar, message['id'], request_id='after-rewind')
+        assert reread.status_code == 200, reread.text
+        assert not reread.json()['cached']
+        assert reread.json()['turn_id'] != first.json()['turn_id']
+        assert len(provider.calls) == 2
+        assert len(client.get(f'/api/avatars/{avatar}/messages').json()) == 3
+
+
+@pytest.mark.parametrize('change', ['exclude', 'edit'])
+def test_summary_cache_does_not_reuse_stopped_or_edited_answers(tmp_path, monkeypatch, change):
+    client, provider = client_for(tmp_path, monkeypatch)
+    with client:
+        avatar = create_avatar(client)
+        message = upload(client, avatar, b'Library opens at 9 AM.', 'schedule.txt').json()
+        first = read(client, avatar, message['id'])
+        assert first.status_code == 200
+        db = client.app.state.db
+        assistant = db.one("SELECT id FROM messages WHERE turn_id=? AND role='assistant'", (first.json()['turn_id'],))
+        if change == 'exclude':
+            response = client.post(f'/api/avatars/{avatar}/messages/{assistant["id"]}/memory', json={'action': 'forget', 'confirmed': True})
+            assert response.status_code == 200, response.text
+        else:
+            preview = client.post(f'/api/avatars/{avatar}/timeline/preview-change', json={
+                'action': 'edit', 'message_id': assistant['id'], 'timeline_kind': 'official',
+                'replacement_text': '已校正为另一条内容。',
+            })
+            assert preview.status_code == 200, preview.text
+            changed = client.post(f'/api/avatars/{avatar}/timeline/apply-change', json={
+                'preview_token': preview.json()['preview_token'],
+            })
+            assert changed.status_code == 200, changed.text
+        # Replaying the same request must not resurrect the stopped answer or pay again.
+        replay = read(client, avatar, message['id'])
+        assert replay.status_code == 409, replay.text
+        assert len(provider.calls) == 1
+        reread = read(client, avatar, message['id'], request_id='deliberate-new-read')
+        assert reread.status_code == 200, reread.text
+        assert not reread.json()['cached'] and len(provider.calls) == 2
+
+
+@pytest.mark.parametrize('change', ['rewind', 'edit', 'forget', 'delete_avatar'])
+def test_reply_finishing_after_conversation_change_is_discarded(tmp_path, monkeypatch, change):
+    client, provider = client_for(tmp_path, monkeypatch)
+    with client:
+        avatar = create_avatar(client)
+        message = upload(client, avatar, b'Library opens at 9 AM.', 'schedule.txt').json()
+        original_chat = provider.chat
+
+        def rewind_while_waiting(messages, **kwargs):
+            from openavatar.services.timeline_archive import apply_change, preview_change
+            db = client.app.state.db
+            question = db.one("SELECT id FROM messages WHERE avatar_id=? AND client_key=?",
+                              (avatar, f'document:{message["id"]}:read1'))
+            if change in {'rewind', 'edit'}:
+                preview = preview_change(db, avatar, {'timeline_kind': 'official',
+                    'action': 'delete' if change == 'rewind' else 'edit',
+                    'message_id': question['id'], 'replacement_text': '这个问题作废。'})
+                apply_change(db, avatar, preview['preview_token'])
+            elif change == 'forget':
+                stopped = client.post(f'/api/avatars/{avatar}/messages/{question["id"]}/memory',
+                                      json={'action': 'forget', 'confirmed': True})
+                assert stopped.status_code == 200, stopped.text
+            else:
+                deleted = client.delete(f'/api/avatars/{avatar}', params={'confirmation': '流式人物'})
+                assert deleted.status_code == 200, deleted.text
+            return original_chat(messages, **kwargs)
+
+        monkeypatch.setattr(provider, 'chat', rewind_while_waiting)
+        response = read(client, avatar, message['id'])
+        assert response.status_code == 409, response.text
+        assert response.json()['detail']['code'] == 'document_conversation_changed'
+        history = client.app.state.db.all('SELECT * FROM messages WHERE avatar_id=? ORDER BY id', (avatar,))
+        assert not any(row['role'] == 'assistant' for row in history)
+        if change == 'rewind':
+            assert [row['id'] for row in history] == [message['id']]
+        if history:
+            assert 'document' not in json.loads(history[0]['attachment_json'])
+        assert len(provider.calls) == 1
+
+
+def test_reopened_document_is_busy_until_original_finishes_then_reuses_cache(tmp_path, monkeypatch):
+    client, provider = client_for(tmp_path, monkeypatch)
+    with client:
+        avatar = create_avatar(client)
+        message = upload(client, avatar, b'Library opens at 9 AM.', 'schedule.txt').json()
+        entered, finish = threading.Event(), threading.Event()
+        original_chat = provider.chat
+
+        def wait_for_model(messages, **kwargs):
+            entered.set()
+            assert finish.wait(5), 'test did not release its local provider'
+            return original_chat(messages, **kwargs)
+
+        monkeypatch.setattr(provider, 'chat', wait_for_model)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            first = executor.submit(read, client, avatar, message['id'])
+            try:
+                assert entered.wait(5)
+                reopened = read(client, avatar, message['id'], request_id='reopened-dialog')
+                assert reopened.status_code == 409, reopened.text
+                assert reopened.json()['detail']['code'] == 'document_busy'
+            finally:
+                finish.set()
+            completed = first.result(timeout=5)
+        assert completed.status_code == 200, completed.text
+        after = read(client, avatar, message['id'], request_id='reopened-dialog')
+        assert after.status_code == 200 and after.json()['cached']
+        assert after.json()['turn_id'] == completed.json()['turn_id']
+        assert len(provider.calls) == 1

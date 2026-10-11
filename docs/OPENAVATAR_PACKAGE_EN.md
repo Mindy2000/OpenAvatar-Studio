@@ -10,6 +10,8 @@ The unreleased chat-memory upgrade preserves message `context_excluded` flags, t
 
 Changing or stopping a merged chat source also deactivates memories containing it; the UI explains this beforehand without deleting original chats or separate material. Preview and official memories cannot be merged together. Sleep consolidation skips explicit chat notes and their merged derivatives. Historical text still exists in the package: deactivation is not deletion or anonymization, so inspect content before sharing.
 
+When conversation export is disabled, memories derived by merging chat sources are excluded as well, even if their resulting category is different. Independently written persona summaries and world facts still need manual review.
+
 ## Structure
 
 Preflight requires `manifest.json`, `memories.json`, and `messages.json`. Other sections are optional. Current exports generally write their JSON files even when privacy filters empty their content.

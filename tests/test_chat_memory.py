@@ -149,3 +149,159 @@ def test_explicit_note_cannot_leak_via_legacy_consolidation_or_preview_merge(tmp
         assert not db.one("SELECT id FROM memories WHERE avatar_id=? AND kind='consolidated_summary' AND content LIKE '%可撤回事实%'", (avatar,))
         act(client, avatar, official, 'forget').raise_for_status()
         assert not db.one("SELECT id FROM memories WHERE avatar_id=? AND confidence>0 AND content LIKE '%可撤回事实%'", (avatar,))
+
+
+def test_private_export_omits_chat_notes_merged_into_other_memory_kinds(tmp_path, monkeypatch):
+    from openavatar.services.memory_intelligence import merge_memories
+    with make_client(tmp_path, monkeypatch) as client:
+        avatar = create_avatar(client)
+        db = client.app.state.db
+        marker = 'PRIVATE_MERGED_CHAT_7520'
+        client.post(f'/api/avatars/{avatar}/chat', json={'message': marker}).raise_for_status()
+        source = messages(client, avatar)[0]['id']
+        note = act(client, avatar, source, 'remember', marker).json()['memory']['id']
+        primary = db.execute("INSERT INTO memories(avatar_id,speaker,content,kind,created_at) VALUES(?,'用户','公开校园事实','fact',0)", (avatar,))
+        parent = db.execute("INSERT INTO memories(avatar_id,speaker,content,kind,created_at) VALUES(?,'用户','公开课程事实','fact',0)", (avatar,))
+        unrelated = db.execute("INSERT INTO memories(avatar_id,speaker,content,kind,created_at) VALUES(?,'用户','独立保留的事实','fact',0)", (avatar,))
+        merge_memories(db, avatar, primary, note)
+        merge_memories(db, avatar, parent, primary)
+        full = client.post(f'/api/avatars/{avatar}/export')
+        with zipfile.ZipFile(io.BytesIO(full.content)) as archive:
+            assert marker.encode() in archive.read('memories.json')
+        private = client.post(f'/api/avatars/{avatar}/export?include_conversations=false&include_call_history=false')
+        private.raise_for_status()
+        with zipfile.ZipFile(io.BytesIO(private.content)) as archive:
+            assert all(marker.encode() not in archive.read(name) for name in archive.namelist())
+            exported = json.loads(archive.read('memories.json'))
+            assert [row['id'] for row in exported] == [unrelated]
+        # The private source must stay traceable even after rollback deletes it.
+        base = f'/api/avatars/{avatar}'
+        preview = client.post(base + '/timeline/preview-change', json={'timeline_kind': 'official', 'action': 'delete', 'message_id': source}).json()
+        client.post(base + '/timeline/apply-change', json={'preview_token': preview['preview_token']}).raise_for_status()
+        assert db.one('SELECT id FROM memories WHERE id=?', (note,)) is None
+        private = client.post(base + '/export?include_conversations=false&include_call_history=false')
+        private.raise_for_status()
+        with zipfile.ZipFile(io.BytesIO(private.content)) as archive:
+            assert all(marker.encode() not in archive.read(name) for name in archive.namelist())
+            assert [row['id'] for row in json.loads(archive.read('memories.json'))] == [unrelated]
+        package = client.post(base + '/export')
+        imported = client.post('/api/packages/import', content=package.content, headers={
+            'Content-Type': 'application/zip', 'X-File-Name': 'avatar.openavatar.zip', 'X-Rights-Confirmed': 'true',
+        })
+        imported.raise_for_status()
+        private = client.post(f"/api/avatars/{imported.json()['id']}/export?include_conversations=false&include_call_history=false")
+        private.raise_for_status()
+        with zipfile.ZipFile(io.BytesIO(private.content)) as archive:
+            assert all(marker.encode() not in archive.read(name) for name in archive.namelist())
+            assert [row['content'] for row in json.loads(archive.read('memories.json'))] == ['独立保留的事实']
+
+
+def test_maintenance_edit_and_reject_remove_stale_chat_context_and_merged_copies(tmp_path, monkeypatch):
+    from openavatar.services.memory_intelligence import merge_memories
+    captured = []
+    monkeypatch.setattr(FakeStreamingProvider, 'chat', lambda self, rows, **_: captured.append(rows) or '好的。')
+    with make_client(tmp_path, monkeypatch) as client:
+        avatar = create_avatar(client)
+        db = client.app.state.db
+        for action in ['edit', 'reject']:
+            old_fact, new_fact = f'OLD_MAINTENANCE_{action}', f'NEW_MAINTENANCE_{action}'
+            client.post(f'/api/avatars/{avatar}/chat', json={'message': old_fact}).raise_for_status()
+            source = messages(client, avatar)[-2]['id']
+            note = act(client, avatar, source, 'remember', old_fact).json()['memory']['id']
+            parent = db.execute("INSERT INTO memories(avatar_id,speaker,content,kind,created_at) VALUES(?,'用户','校园事实','fact',0)", (avatar,))
+            merge_memories(db, avatar, parent, note)
+            # The source is already merged; editing it is possible in the existing maintenance page.
+            if action == 'edit':
+                response = client.patch(f'/api/avatars/{avatar}/memories/{note}', json={'content': new_fact, 'kind': 'chat_note', 'confidence': 1})
+            else:
+                response = client.post(f'/api/avatars/{avatar}/memories/{note}/review', json={'action': 'reject'})
+            response.raise_for_status()
+            client.post(f'/api/avatars/{avatar}/chat', json={'message': '你现在记得什么？'}).raise_for_status()
+            prompt = json.dumps(captured[-1], ensure_ascii=False)
+            assert old_fact not in prompt
+            assert (new_fact in prompt) == (action == 'edit')
+            assert db.one('SELECT context_excluded FROM messages WHERE id=?', (source,))['context_excluded']
+            assert db.one('SELECT confidence FROM memories WHERE id=?', (parent,))['confidence'] == 0
+
+
+def test_timeline_removes_merged_chat_facts_and_restores_without_reviving_stopped_notes(tmp_path, monkeypatch):
+    from openavatar.services.memory_intelligence import merge_memories
+    captured = []
+    monkeypatch.setattr(FakeStreamingProvider, 'chat', lambda self, rows, **_: captured.append(rows) or '好的。')
+    with make_client(tmp_path, monkeypatch) as client:
+        for baseline in (False, True):
+            for stop_before_restore in (False, True):
+                avatar = create_avatar(client)
+                db = client.app.state.db
+                base = f'/api/avatars/{avatar}'
+                note_ids, source_ids = [], []
+                for text in ('EARLY_FACT_A', 'REMOVED_FACT_B'):
+                    client.post(base + '/chat', json={'message': text}).raise_for_status()
+                    source_ids.append(messages(client, avatar)[-2]['id'])
+                    note_ids.append(act(client, avatar, source_ids[-1], 'remember', text).json()['memory']['id'])
+                primary = note_ids[0]
+                if baseline:
+                    primary = db.execute("INSERT INTO memories(avatar_id,speaker,content,kind,created_at) VALUES(?,'用户','独立校园事实','fact',0)", (avatar,))
+                merge_memories(db, avatar, primary, note_ids[1])
+                # Preview notes must survive all changes to the official branch.
+                preview_source = db.execute("INSERT INTO messages(avatar_id,role,content,channel,created_at) VALUES(?,'user','PREVIEW_FACT_C','preview',0)", (avatar,))
+                preview_note = act(client, avatar, preview_source, 'remember', 'PREVIEW_FACT_C', preview_mode=True).json()['memory']['id']
+                preview = client.post(base + '/timeline/preview-change', json={'timeline_kind': 'official', 'action': 'delete', 'message_id': source_ids[1]}).json()
+                changed = client.post(base + '/timeline/apply-change', json={'preview_token': preview['preview_token']})
+                changed.raise_for_status()
+                client.post(base + '/chat', json={'message': '你现在记得什么？'}).raise_for_status()
+                assert 'REMOVED_FACT_B' not in json.dumps(captured[-1], ensure_ascii=False)
+                if stop_before_restore:
+                    if baseline:
+                        client.post(base + f'/memories/{primary}/review', json={'action': 'reject'}).raise_for_status()
+                    else:
+                        act(client, avatar, source_ids[0], 'forget').raise_for_status()
+                client.post(base + '/timeline/restore', json={'branch_id': changed.json()['frozen_branch_id']}).raise_for_status()
+                client.post(base + '/chat', json={'message': '你现在记得什么？'}).raise_for_status()
+                prompt = json.dumps(captured[-1], ensure_ascii=False)
+                assert db.one('SELECT confidence FROM memories WHERE id=?', (primary,))['confidence'] == (0 if stop_before_restore else 1)
+                assert ('REMOVED_FACT_B' in prompt) == (not stop_before_restore)
+                assert 'PREVIEW_FACT_C' not in prompt
+                assert db.one('SELECT confidence FROM memories WHERE id=?', (preview_note,))['confidence'] == 1
+
+
+def test_restoring_snapshot_does_not_revive_stopped_message_without_saved_note(tmp_path, monkeypatch):
+    captured = []
+    monkeypatch.setattr(FakeStreamingProvider, 'chat', lambda self, rows, **_: captured.append(rows) or '好的。')
+    with make_client(tmp_path, monkeypatch) as client:
+        avatar = create_avatar(client)
+        base = f'/api/avatars/{avatar}'
+        for text in ('STOP_WITHOUT_NOTE_1427', '待删除后续消息'):
+            client.post(base + '/chat', json={'message': text}).raise_for_status()
+        rows = messages(client, avatar)
+        preview = client.post(base + '/timeline/preview-change', json={'timeline_kind': 'official', 'action': 'delete', 'message_id': rows[-2]['id']}).json()
+        changed = client.post(base + '/timeline/apply-change', json={'preview_token': preview['preview_token']}).json()
+        act(client, avatar, rows[0]['id'], 'forget').raise_for_status()
+        client.post(base + '/timeline/restore', json={'branch_id': changed['frozen_branch_id']}).raise_for_status()
+        client.post(base + '/chat', json={'message': '你现在记得什么？'}).raise_for_status()
+        assert 'STOP_WITHOUT_NOTE_1427' not in json.dumps(captured[-1], ensure_ascii=False)
+        restored = messages(client, avatar)
+        assert all(row['context_excluded'] for row in restored[:2])
+
+
+def test_restore_before_new_merge_keeps_independent_fact(tmp_path, monkeypatch):
+    from openavatar.services.memory_intelligence import merge_memories
+    with make_client(tmp_path, monkeypatch) as client:
+        avatar = create_avatar(client)
+        db = client.app.state.db
+        base = f'/api/avatars/{avatar}'
+        primary = db.execute("INSERT INTO memories(avatar_id,speaker,content,kind,created_at) VALUES(?,'用户','独立校园事实','fact',0)", (avatar,))
+        client.post(base + '/chat', json={'message': '封存前的普通聊天'}).raise_for_status()
+        preview = client.post(base + '/timeline/preview-change', json={'timeline_kind': 'official', 'action': 'delete', 'message_id': messages(client, avatar)[0]['id']}).json()
+        frozen = client.post(base + '/timeline/apply-change', json={'preview_token': preview['preview_token']}).json()['frozen_branch_id']
+        client.post(base + '/chat', json={'message': 'NEW_BRANCH_PRIVATE_FACT'}).raise_for_status()
+        note = act(client, avatar, messages(client, avatar)[0]['id'], 'remember', 'NEW_BRANCH_PRIVATE_FACT').json()['memory']['id']
+        merge_memories(db, avatar, primary, note)
+        restored = client.post(base + '/timeline/restore', json={'branch_id': frozen})
+        restored.raise_for_status()
+        row = db.one('SELECT content,confidence FROM memories WHERE id=?', (primary,))
+        assert row == {'content': '独立校园事实', 'confidence': 1}
+        # Switching back must recover the saved merged branch as well.
+        client.post(base + '/timeline/restore', json={'branch_id': restored.json()['frozen_branch_id']}).raise_for_status()
+        row = db.one('SELECT content,confidence FROM memories WHERE id=?', (primary,))
+        assert row == {'content': '独立校园事实\nNEW_BRANCH_PRIVATE_FACT', 'confidence': 1}

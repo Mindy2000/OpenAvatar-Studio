@@ -1,5 +1,11 @@
 /* Browser recognition sends transcripts to the text gateway; audio replies use
    the avatar's existing TTS route. It never starts a camera or a video session. */
+function voiceRecognitionLanguage(primaryLanguage) {
+  // Persisted avatar language is a locale (en-US), while older packages may
+  // still carry en/English. UI language does not override the avatar's language.
+  const language = String(primaryLanguage || '').trim().toLowerCase().replaceAll('_', '-');
+  return language === 'english' || /^en(?:-|$)/.test(language) ? 'en-US' : 'zh-CN';
+}
 class VoiceCallController {
   constructor({avatarId, language = 'zh-CN', status, transcript, changed, maxMinutes = 10, estimatedBudgetCny = 5, limits = () => {}}) {
     Object.assign(this, {avatarId, language, status, transcript, changed, maxMinutes, estimatedBudgetCny, limits});
@@ -369,7 +375,7 @@ $('#connectVoiceCall').addEventListener('click', () => {
       const warning = event.budget_warning ? tr('接近本次估算额度。') : event.time_warning ? tr('即将达到设定时长。') : '';
       node.textContent = tr`已预留估算 ¥${reserved} / ¥${budget} · 剩余 ${seconds} 秒` + (warning ? ` · ${warning}` : '');
     },
-    avatarId:state.currentId, language:primary === 'en' || primary === 'English' ? 'en-US' : 'zh-CN',
+    avatarId:state.currentId, language:voiceRecognitionLanguage(primary),
     status: text => {
       $('#voiceCallStatus').textContent = text;
       if (activeVoiceCall?.ready && activeVoiceCall.active && !voiceStartedAt) {

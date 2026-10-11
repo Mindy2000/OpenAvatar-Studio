@@ -10,6 +10,11 @@
 - 支持显式阅读聊天里的TXT、MD、CSV和文本PDF并提问：文本≤2 MB，PDF≤10 MB/20页，提取文本≤20,000字符，无OCR。上传不自动分析；逐次确认数据发送及费用，每次提问最多一次调用，不自动重试。回复含文件来源，普通后续聊天不自动附带全文。
 - 在文字和有转写的语音消息旁增加记住、纠正和停用。经确认后只在本机处理，保留原聊天和修订记录；纠正/停用排除原消息与同轮回复的后续上下文，停用关联记忆。修改/停用已合并来源也停用包含它的合并记忆，弹窗事先说明；预览与正式记忆不能互合，睡眠整理跳过显式聊天记忆及合并派生。人物包导出记忆ID，导入映射修订及合并来源，保留相关控制；不删除原聊天或独立资料。
 
+- 修复文字聊天在等待首个响应时停止无效、连续发送后旧请求覆盖新请求状态的问题；请求始终绑定发送时的人物和预览/正式时间线。
+- 升级后复核：修复快速切换人物/时间线及返回首页时，延迟响应覆盖当前页面；修复英文人物的语音识别语言，以及分块小数被提前断句。通话请求发起前即记录预算预留，结束后更新同一记录，打断后的在途语音仍计入日/月预算。
+- 文件概括缓存仅复用当前时间线中未修改、未停用的完整问答；问答被编辑、回退或停用后不再返回旧结果；等待期间原问答变化或人物被删除，迟到回复不会复活聊天。
+- 资料维护中的聊天记忆纠正/拒绝同步停用原上下文及合并派生；关闭聊天导出也排除含聊天来源的合并记忆。时间线回退同步停用派生记忆，恢复封存不会撤销之后明确做出的纠正/停用。
+
 本次时长和额度控制使用估算预留，不是实际扣款或服务商账单硬上限；失败或已打断的请求仍可能收费，不退回已用预留。此次升级尚未进行真实付费服务验收；旧版的真实通话/自拍看图结论不能自动覆盖新流程。应用版本仍为0.1.0-rc.5，本节不代表新安装包已经发布。
 
 ### English
@@ -19,6 +24,11 @@
 - Keep the configured model, selected voice, and 80-character replies while synthesizing/playing sentence segments in order, with at most three TTS requests per reply. Interruption stops old playback and queues; failures do not automatically retry or switch providers. Per-request billing totals may change; actual latency improvement is not yet claimed.
 - Explicitly read and question chat TXT, MD, CSV, and text-layer PDFs: text ≤2 MB, PDFs ≤10 MB/20 pages, extracted text ≤20,000 characters, without OCR. Uploads do not trigger analysis. Each submission confirms data transfer/costs and makes at most one call without automatic retry. Replies include a file source; ordinary later chat does not automatically include the full document.
 - Add remember, correct, and deactivate controls beside text/transcribed voice messages. Confirmed actions run locally and retain chats and revisions. Correction/deactivation excludes the source and same-turn reply from later context; deactivation disables linked memories. Changing/stopping merged sources also disables memories containing them, with an advance dialog notice. Preview and official memories cannot be merged together; sleep consolidation skips explicit chat notes and merged derivatives. Packages export memory IDs and remap revisions and merge provenance on import, preserving these controls without deleting original chats or independent material.
+
+- Fix text-chat cancellation before response headers and stale request cleanup overwriting a newer request; every request remains bound to its original avatar and preview/official timeline.
+- Post-upgrade review: ignore delayed responses after avatar/timeline navigation or returning home; fix English speech-recognition selection and split-chunk decimals. Call requests reserve connection budget before starting, then update the same usage row, so interrupted in-flight speech still counts toward daily/monthly estimates.
+- Reuse document-summary caches only for unchanged, active question/answer pairs on the current timeline. Editing, rolling back, or deactivating a turn invalidates its old result; a late reply cannot revive a changed/deleted pending turn or a deleted avatar.
+- Chat-memory corrections/rejections in Data Maintenance exclude source context and merged derivatives too; disabling conversation export also excludes memories merged from chat sources. Timeline rollback deactivates merged derivatives, and restoration preserves later explicit corrections/deactivations.
 
 Limits use estimated reservations, not actual debits or hard caps on provider bills. Failed/interrupted requests may still be charged, so consumed reservations are not refunded. These upgrades have not undergone live paid-service acceptance; previous call/camera acceptance does not automatically cover them. The application version remains 0.1.0-rc.5; this section does not announce new published binaries.
 

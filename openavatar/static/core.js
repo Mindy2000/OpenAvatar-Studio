@@ -256,7 +256,10 @@ function showFilePreviewNotice() {
   }
 }
 
+let avatarNavigationGeneration = 0;
+
 function showView(id) {
+  if (id !== "#studioView") avatarNavigationGeneration++;
   if (id !== "#studioView" && typeof endVoiceCall === "function") endVoiceCall();
   $$(".view").forEach(node => node.classList.add("hidden"));
   $(id).classList.remove("hidden");
@@ -400,13 +403,20 @@ function escapeHtml(value = "") {
 }
 
 async function openAvatar(id) {
+  const generation = ++avatarNavigationGeneration;
+  const current = await api(`/api/avatars/${id}`);
+  // A late response must never pair one avatar's details with another's ID,
+  // or bring the user back after they have chosen Home or Create.
+  if (generation !== avatarNavigationGeneration) return;
+  closeAuxiliaryDialogs();
+  if (typeof cancelActiveChat === "function") void cancelActiveChat();
   if (typeof resetChatComposer === "function") resetChatComposer();
   if (typeof endVoiceCall === "function") endVoiceCall();
   state.lastEvaluation = null;
   state.currentImport = null;
   $("#evaluationResult").innerHTML = "";
   state.currentId = id;
-  state.current = await api(`/api/avatars/${id}`);
+  state.current = current;
   if (typeof refreshChatHeader === "function") refreshChatHeader();
   setCreationMode(state.current.subject_kind === "fictional" ? "fictional" : "real");
   state.previewMode = !state.current.readiness?.can_start_official;
@@ -418,6 +428,7 @@ async function openAvatar(id) {
   renderReadinessBanner();
   renderProfile();
   await loadMessages();
+  if (generation !== avatarNavigationGeneration || state.currentId !== id) return;
   selectTab("chat");
   showView("#studioView");
   if (typeof fitConversationHeight === "function") requestAnimationFrame(fitConversationHeight);

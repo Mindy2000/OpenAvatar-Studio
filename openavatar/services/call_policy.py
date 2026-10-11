@@ -101,7 +101,10 @@ class SentenceSegments:
         self.buffer += text
         result = []
         while self.count < 2:
-            boundary = re.search(r"[。！？!?；;\n]|\.(?=\s|$)", self.buffer)
+            # A streaming chunk is not a sentence boundary: "1." can be
+            # followed by "5". Only the final flush can trust end-of-buffer.
+            period = r"\.(?=\s|$)" if final else r"\.(?=\s)"
+            boundary = re.search(r"[。！？!?；;\n]|" + period, self.buffer)
             if not boundary:
                 break
             value, self.buffer = self.buffer[:boundary.end()], self.buffer[boundary.end():]

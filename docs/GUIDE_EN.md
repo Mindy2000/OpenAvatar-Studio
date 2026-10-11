@@ -157,11 +157,17 @@ Ordinary text and voice-note replies enforce an 80-character limit including pun
 
 Text files are limited to 2 MB; PDFs to 10 MB and 20 pages; all extracted text to 20,000 characters. Oversized files are rejected and must be split. Only PDF text layers are read: there is no OCR, and images or pages without text are not considered read. Encrypted, damaged, or timed-out PDFs are rejected. Each explicit question makes at most one current-chat-service call, with no automatic retry or provider switch. A successful default summary for the same file can be reused. Files do not automatically become persona settings, memories, or world facts.
 
+Summary caches are reused only while the complete, unchanged question/answer pair remains active on the current timeline. After editing, rollback, or deactivation, explicitly confirm a new summary; the discarded answer is not reused.
+
 ### Manage memory beside a message
 
 Click Memory beside a text or transcribed voice message, review/edit the content, then choose Remember this, Correct and remember, or Stop using this. After user confirmation these actions run locally without a model call and retain revision records.
 
 Correction or stopping use excludes the original message and same-turn reply from future context. Stopping use also deactivates linked memories; corrected memory remains available. If the chat note has been merged into another memory, the dialog warns beforehand that changing or stopping the source also deactivates memories containing it. Original chat history stays visible. This does not delete history or independently saved material, or recall requests already sent to providers. Preview and official memories cannot be merged together. Sleep consolidation skips explicitly saved chat notes and their merged derivatives, preserving source-based correction and deactivation.
+
+Editing or rejecting chat-source memories in Data Maintenance also excludes their source context and deactivates merged derivatives. If a pending document question is rolled back, edited, deactivated, or its avatar is deleted, a late reply is not inserted back into chat. Requests already sent may still incur charges.
+
+Restoring an archived timeline does not undo explicit memory corrections or deactivations made after it was archived. Rolling back chat also deactivates merged memories that contain the removed sources.
 
 ### Capability boundaries for this round (unreleased)
 

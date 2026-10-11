@@ -56,11 +56,11 @@ async def check_websocket(base: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--only', nargs='+', choices=['i18n', 'chat', 'documents', 'smoke', 'video', 'timeline'],
+    parser.add_argument('--only', nargs='+', choices=['i18n', 'chat', 'documents', 'navigation', 'smoke', 'video', 'timeline'],
                         help='Rerun selected checks after a failure; default runs all.')
     parser.add_argument('--artifacts', type=Path, help='Preserve synthetic browser screenshots in this directory.')
     args = parser.parse_args()
-    selected = set(args.only or ['i18n', 'chat', 'documents', 'smoke', 'video', 'timeline'])
+    selected = set(args.only or ['i18n', 'chat', 'documents', 'navigation', 'smoke', 'video', 'timeline'])
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -94,6 +94,7 @@ def main() -> None:
                     'i18n': ['scripts/i18n_ui_checks.py', '--base-url', base],
                     'chat': ['scripts/chat_ui_i18n_checks.py', '--base-url', base, '--output', str(output / 'chat-i18n')],
                     'documents': ['scripts/chat_documents_ui_checks.py', '--base-url', base],
+                    'navigation': ['scripts/navigation_ui_checks.py', '--base-url', base],
                     'smoke': ['scripts/ui_smoke.py', '--base-url', base],
                     'video': ['scripts/video_call_ui_checks.py', '--base-url', base],
                     'timeline': ['scripts/timeline_ui_smoke.py'],

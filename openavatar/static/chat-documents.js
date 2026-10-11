@@ -28,6 +28,7 @@ const chatDocumentErrors = {
   document_busy: 'Another file question is being processed. Please wait; there is no automatic retry.',
   document_request_reused: 'This request ID was used for another question or file version. Confirm and send again.',
   document_already_attempted: 'This request already completed or failed. No new call was made. To retry, confirm and send again.',
+  document_conversation_changed: 'This file or conversation was edited, rewound or stopped. The reply was not added to chat; a service call that already started may still incur charges. Select the file again.',
   document_provider_failed: 'The file question failed. No retry or provider switch was made. Check the connection, then confirm and try again.'
 };
 let chatDocumentDialog = null;
