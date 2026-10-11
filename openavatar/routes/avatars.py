@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from openavatar.routes._shared import *
+from openavatar.services.proactive import invalidate_proactive_config
 
 
 def create_avatars_router(context: ApplicationContext) -> APIRouter:
@@ -211,7 +212,10 @@ def create_avatars_router(context: ApplicationContext) -> APIRouter:
                     params.append(int(value) if isinstance(value, bool) else value)
             fields.append("updated_at=?")
             params.extend([int(time.time()), avatar_id])
-            db.execute(f"UPDATE avatars SET {', '.join(fields)} WHERE id=?", tuple(params))
+            with db.transaction() as connection:
+                connection.execute(f"UPDATE avatars SET {', '.join(fields)} WHERE id=?", tuple(params))
+                if any(key in values for key in ("proactive_enabled", "proactive_interval_minutes", "consent_confirmed")):
+                    invalidate_proactive_config(connection, avatar_id)
             build_persona_core(db, avatar_id)
         return public_avatar(require_avatar(db, avatar_id))
 

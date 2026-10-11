@@ -12,6 +12,8 @@ Changing or stopping a merged chat source also deactivates memories containing i
 
 When conversation export is disabled, memories derived by merging chat sources are excluded as well, even if their resulting category is different. Independently written persona summaries and world facts still need manual review.
 
+Unreleased fixes dated 2026-10-12 record source IDs and input digests for consolidated summaries and remap them on import, preserving deduplication and source-change invalidation. Conversation-free export follows these source links too. `evidence.json` and `world_events.json` retain original IDs for remapping; facts/snapshots reference new evidence IDs and snapshot event lists use new event IDs. Missing legacy identifiers clear unverifiable evidence links rather than referring to another avatar's evidence. Persona Core is recomputed from current local inputs when used.
+
 ## Structure
 
 Preflight requires `manifest.json`, `memories.json`, and `messages.json`. Other sections are optional. Current exports generally write their JSON files even when privacy filters empty their content.
@@ -51,10 +53,11 @@ These filters do not anonymize content. Summaries, world facts, user-entered sec
 
 ## Import and compatibility
 
-- Local preflight checks format, version, required files, paths, member count, and expanded size, and displays content/model hints.
+- Local preflight/import share format, version, required-file, path, duplicate-name, count, expanded-size, all-file CRC, JSON-shape and numeric checks, and display content/model hints.
 - Maximum 2,000 members and 1 GiB total expanded size. Upload size for import is `min(MAX_UPLOAD_MB × 10, 1024)` MiB, normally 500 MiB; ordinary material uploads default to 50 MiB.
 - Absolute paths, parent traversal, backslashes, and Windows drive forms are rejected. Required JSON types are validated.
 - After rights confirmation, import creates a new avatar ID and remaps paths. Dedicated API keys are not imported.
+- Assets are staged in a temporary directory and published with the database transaction. Read/write or commit failures roll back the new avatar and clean temporary assets instead of leaving a partial imported avatar.
 - Provider-bound assets require checking/rebinding; retaining an external ID does not grant access under a new account.
 - Missing v1/v2 sections receive implementation defaults. An older v1 warning may still mention v2; current exports remain v3.
 

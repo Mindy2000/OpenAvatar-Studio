@@ -32,9 +32,11 @@ class FailoverChatProvider:
     def stream_chat(self, messages: list[dict[str, str]]) -> Iterator[str]:
         errors = []
         for provider in self.providers:
+            stream = None
             try:
                 yielded = False
-                for chunk in provider.stream_chat(messages):
+                stream = provider.stream_chat(messages)
+                for chunk in stream:
                     yielded = True
                     yield chunk
                 return
@@ -42,6 +44,9 @@ class FailoverChatProvider:
                 if yielded:
                     raise
                 errors.append(str(exc))
+            finally:
+                if stream is not None and hasattr(stream, "close"):
+                    stream.close()
         raise ProviderError("所有聊天服务均不可用：" + "；".join(errors))
 
 
@@ -60,32 +65,41 @@ class MeteredChatProvider:
         return sum(len(str(item.get("content", ""))) for item in messages)
 
     def chat(self, messages: list[dict[str, str]], *, json_mode: bool = False) -> str:
-        from openavatar.services.provider_hub import estimate_provider_cost, record_provider_usage
+        from openavatar.services.provider_hub import begin_provider_usage, finish_provider_usage
 
-        started = time.perf_counter()
+        event = begin_provider_usage(self.db, self.avatar_id, str(self.row["id"]), self.model, "chat", input_units=self._input_size(messages), output_units=4096)
+        started, status, result = time.perf_counter(), "interrupted", ""
         try:
             result = self.provider.chat(messages, json_mode=json_mode)
-            cost = estimate_provider_cost(self.row, "chat", input_units=self._input_size(messages), output_units=len(result))
-            record_provider_usage(self.db, self.avatar_id, str(self.row["id"]), self.model, "chat", "ok", latency_ms=(time.perf_counter() - started) * 1000, estimated_cost=cost)
+            status = "ok"
             return result
-        except Exception as exc:
-            record_provider_usage(self.db, self.avatar_id, str(self.row["id"]), self.model, "chat", "failed", latency_ms=(time.perf_counter() - started) * 1000, metadata={"error": str(exc)[:500]})
+        except Exception:
+            status = "failed"
             raise
+        finally:
+            finish_provider_usage(self.db, event, status, latency_ms=(time.perf_counter() - started) * 1000, input_units=self._input_size(messages), output_units=len(result))
 
     def stream_chat(self, messages: list[dict[str, str]]) -> Iterator[str]:
-        from openavatar.services.provider_hub import estimate_provider_cost, record_provider_usage
+        from openavatar.services.provider_hub import begin_provider_usage, finish_provider_usage
 
-        started = time.perf_counter()
-        output_size = 0
+        event = begin_provider_usage(self.db, self.avatar_id, str(self.row["id"]), self.model, "chat", input_units=self._input_size(messages), output_units=4096)
+        started, status = time.perf_counter(), "interrupted"
+        stream, output_size = None, 0
         try:
-            for chunk in self.provider.stream_chat(messages):
+            stream = self.provider.stream_chat(messages)
+            for chunk in stream:
                 output_size += len(chunk)
                 yield chunk
-            cost = estimate_provider_cost(self.row, "chat", input_units=self._input_size(messages), output_units=output_size)
-            record_provider_usage(self.db, self.avatar_id, str(self.row["id"]), self.model, "chat", "ok", latency_ms=(time.perf_counter() - started) * 1000, estimated_cost=cost)
-        except Exception as exc:
-            record_provider_usage(self.db, self.avatar_id, str(self.row["id"]), self.model, "chat", "failed", latency_ms=(time.perf_counter() - started) * 1000, metadata={"error": str(exc)[:500]})
+            status = "ok"
+        except Exception:
+            status = "failed"
             raise
+        finally:
+            try:
+                if stream is not None and hasattr(stream, "close"):
+                    stream.close()
+            finally:
+                finish_provider_usage(self.db, event, status, latency_ms=(time.perf_counter() - started) * 1000, input_units=self._input_size(messages), output_units=output_size)
 
 def avatar_model_setting(db: Database, avatar_id: str) -> dict[str, Any] | None:
     row = db.one("SELECT * FROM avatar_model_settings WHERE avatar_id=?", (avatar_id,))

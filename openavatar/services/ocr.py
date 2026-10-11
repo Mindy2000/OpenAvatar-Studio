@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from openavatar.db import Database
-from openavatar.local_model import LocalModelError, validate_local_url
+from openavatar.local_model import LocalModelError, local_urlopen, validate_local_url
 from openavatar.providers import ProviderError, delete_provider_key, load_provider_key, scoped_provider_key_name, store_provider_key, verified_ssl_context
 
 
@@ -241,7 +241,8 @@ def _run_http(row: dict[str, Any], path: Path) -> tuple[str, str]:
     )
     try:
         context = verified_ssl_context() if str(row["connection_type"]) == "cloud_api" else None
-        with urllib.request.urlopen(request, timeout=90, context=context) as response:
+        opener = local_urlopen if str(row["connection_type"]) == "local_http" else urllib.request.urlopen
+        with opener(request, timeout=90, context=context) as response:
             body = json.loads(response.read().decode("utf-8"))
         text = str(body.get("text") or body.get("result") or body.get("content") or "").strip()
         return text, "OCR 服务已完成" if text else "OCR 服务未返回文字"

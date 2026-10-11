@@ -60,6 +60,8 @@ def propose_fact(
         (avatar_id, key),
     )
     if open_row and status == "pending":
+        if (open_row['fact_value_json'], open_row['reality_kind'], open_row['mutability']) != (_json(value), reality_kind, mutability):
+            raise WorldModelError("此事实已有不同内容的待审批提案，请先批准或拒绝原提案，再提交新值")
         return open_row
     now = int(time.time())
     proposal_id = db.execute(

@@ -10,8 +10,7 @@ document.addEventListener("click", async event => {
     if (action === "start-video-call" && typeof endVoiceCall === "function") endVoiceCall();
     if (action === "open-maintenance" || action?.startsWith("maintenance-")) return await handleMaintenance(action, event.target.closest("[data-action]"));
     if (action === "save-image-text") {
-      state.currentImport.preview = await api(`/api/avatars/${state.currentId}/imports/${state.currentImport.id}/text`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:$("#manualImageText").value})});
-      renderImportReview(); return;
+      await saveImportImageText(); return;
     }
     if (avatar) return await openAvatar(avatar);
     if (step) return goStep(Number(step));
@@ -158,9 +157,11 @@ document.addEventListener("click", async event => {
     if (action === "review-import") await openImportReview(Number(event.target.closest("[data-import-id]").dataset.importId));
     if (action === "close-review") $("#reviewDialog").close();
     if (action === "confirm-import") {
-      const avatarSpeakers = $$("#speakerChoices input:checked").map(node => node.value);
-      const excluded = $$("#reviewRows input:not(:checked)").map(node => Number(node.dataset.rowId));
-      const result = await api(`/api/avatars/${state.currentId}/imports/${state.currentImport.id}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ avatar_speakers: avatarSpeakers, excluded_row_ids: excluded, apply_mode: $("#fictionalApplyMode").value }) });
+      saveImportReviewSelection();
+      const current = state.currentImport;
+      if (current.avatarId !== state.currentId) throw new Error(tr("人物已切换，请重新打开素材预览"));
+      const result = await api(`/api/avatars/${current.avatarId}/imports/${current.id}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ avatar_speakers: current.speakers, excluded_row_ids: [...current.excluded], reviewed_row_ids: [...current.reviewed], apply_mode: $("#fictionalApplyMode").value }) });
+      if (state.currentId !== current.avatarId || state.currentImport !== current) return;
       $("#reviewDialog").close();
       const status = $(`[data-upload-import="${state.currentImport.id}"] .upload-status`);
       setSystemMessage(status, result.note);
@@ -185,11 +186,7 @@ document.addEventListener("click", async event => {
       await loadTrainingJobs(); toast(tr("云端任务已更新"));
     }
     if (action === "speak-message") {
-      const text = event.target.closest(".message").querySelector("span").textContent;
-      if (!confirm(tr("使用所选声音播放会调用云端 TTS 并可能产生费用。继续吗？"))) return;
-      const response = await fetch(`/api/avatars/${state.currentId}/speech`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, confirm_billable_call: true }) });
-      if (!response.ok) { let detail = tr("语音生成失败"); try { detail = (await response.json()).detail || detail; } catch (_) {} throw new Error(systemText(detail)); }
-      await playSpeechBlob(await response.blob());
+      await speakChatMessage(event.target.closest(".message"));
     }
     if (action === "evaluate-avatar") {
       const result = await api(`/api/avatars/${state.currentId}/evaluate`, { method: "POST" });
@@ -301,6 +298,7 @@ document.addEventListener("click", async event => {
       await loadTrainingJobs(); toast(tr("声音方案已选择"));
     }
     if (action === "enable-preview") {
+      void stopConversationMedia();resetChatComposer();void cancelActiveChat();
       state.previewMode = true;
       renderReadinessBanner();
       await loadMessages();
@@ -493,13 +491,7 @@ document.addEventListener("click", async event => {
       button.setAttribute("aria-pressed", String(state.callMicrophoneEnabled));
     }
     if (action === "end-video-call") {
-      if (!state.videoCall?.id) throw new Error(tr("当前没有正在记录的视频通话"));
-      const ended = await api(`/api/avatars/${state.currentId}/calls/${state.videoCall.id}/end`, { method: "POST" });
-      disconnectNorthLiveKit();
-      state.videoCall = null;
-      $("#videoCallStatus").textContent = tr("实时视频通话已结束，North session 已请求释放。");
-      $("#videoCallDetails").innerHTML = `<span>${escapeHtml(ended.summary || tr("通话已结束"))}</span>`;
-      toast(tr("视频通话已结束"));
+      await endVideoCall();
     }
     if (action === "prepare-video-background") {
       const result = await api(`/api/avatars/${state.currentId}/video-call/prepare-background`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "scene", prompt: "" }) });
@@ -512,21 +504,27 @@ document.addEventListener("click", async event => {
       toast(result.ok ? tr("翻转镜头任务已记录") : tr("翻转镜头不可用"), !result.ok);
     }
     if (action === "save-proactive") {
-      state.current = await api(`/api/avatars/${state.currentId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proactive_enabled: $("#proactiveToggle").checked, proactive_interval_minutes: Number($("#proactiveInterval").value) }) });
-      await api(`/api/avatars/${state.currentId}/proactive-rules`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-        daily_max: Number($("#proactiveDailyMax").value),
-        allowed_windows: parseWindows($("#proactiveWindows").value),
-        quiet_hours: parseQuiet($("#proactiveQuiet").value),
-        topic_scope: String($("#proactiveTopics").value || "").split(",").map(item => item.trim()).filter(Boolean),
-        use_long_term_memory: $("#proactiveUseMemory").checked,
-        allow_world_event_advancement: $("#proactiveAdvanceWorld").checked,
-        tone: $("#proactiveTone").value,
-        cooldown_after_user_reply_minutes: Number($("#proactiveCooldown").value),
-      }) });
-      if (state.current.proactive_enabled && "Notification" in window && Notification.permission === "default") {
-        await Notification.requestPermission();
-      }
-      toast(state.current.proactive_enabled ? tr("主动联系已开启，将调用当前模型") : tr("主动联系已关闭"));
+      const avatarId=state.currentId,button=event.target.closest("button");
+      if(button.disabled)return;
+      button.disabled=true;
+      try {
+        const result=await api(`/api/avatars/${avatarId}/proactive-settings`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+          proactive_enabled: $("#proactiveToggle").checked,
+          proactive_interval_minutes: Number($("#proactiveInterval").value),
+          daily_max: Number($("#proactiveDailyMax").value),
+          allowed_windows: parseWindows($("#proactiveWindows").value),
+          quiet_hours: parseQuiet($("#proactiveQuiet").value),
+          topic_scope: String($("#proactiveTopics").value || "").split(",").map(item => item.trim()).filter(Boolean),
+          use_long_term_memory: $("#proactiveUseMemory").checked,
+          allow_world_event_advancement: $("#proactiveAdvanceWorld").checked,
+          tone: $("#proactiveTone").value,
+          cooldown_after_user_reply_minutes: Number($("#proactiveCooldown").value),
+        }) });
+        if(state.currentId!==avatarId)return;
+        state.current={...state.current,...result.avatar};
+        if (state.current.proactive_enabled && "Notification" in window && Notification.permission === "default") await Notification.requestPermission();
+        if(state.currentId===avatarId)toast(state.current.proactive_enabled ? tr("主动联系已开启，将调用当前模型") : tr("主动联系已关闭"));
+      } finally {button.disabled=false;}
     }
     if (action === "save-avatar-model-settings") {
       const useConnection = $("#avatarModelMode").value === "connection";

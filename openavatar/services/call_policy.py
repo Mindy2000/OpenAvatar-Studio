@@ -189,7 +189,7 @@ def preflight_call_voice(db, avatar_id: str) -> dict:
 
 def synthesize_call_segment(plan: dict, text: str, target: Path) -> str:
     """Exactly one synthesis attempt with the preselected connection and voice."""
-    from openavatar.services.aliyun import AliyunAvatarClient, extract_urls, download_provider_asset
+    from openavatar.services.aliyun import AliyunAvatarClient, extract_urls, download_provider_asset, aliyun_native_base_url
     from openavatar.services.minimax import MiniMaxClient, write_audio_result
 
     row = plan["row"]
@@ -199,7 +199,7 @@ def synthesize_call_segment(plan: dict, text: str, target: Path) -> str:
         client = MiniMaxClient(key, str(row["base_url"]), endpoints=config.get("endpoints", {}))
         result = client.synthesize(text, voice_id=plan["voice_id"], model=plan["model"], config=plan["config"])
         return write_audio_result(result, target)
-    result = AliyunAvatarClient(key).synthesize(text, voice_id=plan["voice_id"], model=plan["model"])
+    result = AliyunAvatarClient(key, base_url=aliyun_native_base_url(str(row["base_url"]))).synthesize(text, voice_id=plan["voice_id"], model=plan["model"])
     urls = extract_urls(result.get("output", {}))
     if not urls:
         raise ProviderError("语音接口没有返回可下载的音频")

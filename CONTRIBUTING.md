@@ -19,6 +19,8 @@ node scripts/test_voice_call_controller.cjs
 
 Windows 将 `.venv/bin/` 换为 `.venv\Scripts\`，创建环境时可使用 `python`。UI 检查自动创建临时数据目录和服务，结束后清理测试人物，不需要启动真实用户数据库。`pytest` 也使用隔离目录，并为每项测试提供内存中的临时凭据库，不读取或修改系统钥匙串；测试结束后凭据自动丢弃。
 
+`pytest` 默认阻断外部网络，允许回环地址的协议替身。新增服务适配器或搬移调用模块时同步更新替身，避免旧 mock 失效后触发真实服务；测试记录中的成功仅表示本地协议/流程通过，不代表服务商或真实硬件验收。独立脚本必须在导入 `openavatar.main` 前设置临时 `OPENAVATAR_DATA_DIR` 和空凭据后端。
+
 Node.js 检查使用本地替身验证通话控制，不启用真实浏览器或麦克风，也不调用网络或付费服务。
 
 手动开发时运行 `.venv/bin/python -m uvicorn openavatar.main:app --host 127.0.0.1 --port 8767 --reload`；若不想使用个人数据，请先通过环境变量设置另一个 `OPENAVATAR_DATA_DIR`。

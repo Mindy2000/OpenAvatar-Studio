@@ -127,55 +127,36 @@ def create_archive_router(context: ApplicationContext) -> APIRouter:
             profile = {"external_id": selected_voice["voice_id"]}
         if not profile or not profile.get("external_id"):
             raise HTTPException(400, "请先在构建中心选择 MiniMax 预置音色或完成声音复刻")
-        candidates = route_candidates(db, "tts", avatar_id)
-        if builtin:
-            candidates = [item for item in candidates if item[0]["provider_kind"] == "minimax"]
-            if not candidates:
-                raise HTTPException(400, "预置音色需要已授权且未超预算的 MiniMax 语音合成路由")
-        if candidates:
-            errors = []
-            for connection, model, route_config in candidates:
-                connection_id = str(connection["id"])
-                if str(connection["provider_kind"]) == "aliyun":
-                    target = selected.avatars_dir / avatar_id / "generated" / "audio" / f"{int(time.time())}-{uuid.uuid4().hex[:8]}.mp3"
-                    started = time.perf_counter()
-                    try:
-                        result = AliyunAvatarClient(load_provider_key(provider_key_name(connection_id))).synthesize(payload.text, voice_id=str(profile["external_id"]), model=model or "qwen3-tts-vc-2026-01-22")
-                        urls = extract_urls(result.get("output", {}))
-                        if not urls:
-                            raise AliyunError("语音接口没有返回可下载的音频")
-                        media_type = download_provider_asset(urls[0], target, max_bytes=30 * 1024 * 1024)
-                        record_provider_usage(db, avatar_id, connection_id, model, "tts", "ok", latency_ms=(time.perf_counter() - started) * 1000)
-                        return FileResponse(target, media_type=media_type or "audio/mpeg", filename=target.name)
-                    except AliyunError as exc:
-                        errors.append(f"{connection['display_name']}：{exc}")
-                        continue
-                if str(connection["provider_kind"]) != "minimax":
-                    errors.append(f"{connection['display_name']} 的 TTS 适配器尚不可用")
-                    continue
-                target = selected.avatars_dir / avatar_id / "generated" / "audio" / f"{int(time.time())}-{uuid.uuid4().hex[:8]}.mp3"
-                started = time.perf_counter()
-                try:
-                    config = json.loads(connection.get("config_json") or "{}")
-                    client = MiniMaxClient(
-                        load_provider_key(provider_key_name(connection_id)), str(connection["base_url"]),
-                        endpoints=config.get("endpoints", {}),
-                    )
-                    result = client.synthesize(payload.text, voice_id=str(profile["external_id"]), model=model or "speech-2.8-hd", config=route_config)
-                    media_type = write_audio_result(result, target)
-                    record_provider_usage(db, avatar_id, connection_id, model, "tts", "ok", latency_ms=(time.perf_counter() - started) * 1000, estimated_cost=estimate_provider_cost(connection, "tts", input_units=len(payload.text)))
-                    return FileResponse(target, media_type=media_type, filename=target.name)
-                except (MiniMaxError, OSError) as exc:
-                    errors.append(f"{connection['display_name']}：{exc}")
-                    record_provider_usage(db, avatar_id, connection_id, model, "tts", "failed", latency_ms=(time.perf_counter() - started) * 1000, metadata={"error": str(exc)[:500]})
-            raise HTTPException(502, "；".join(errors) or "没有可用的语音合成服务")
+        from openavatar.services.provider_hub import begin_provider_usage, finish_provider_usage, find_route
+        from openavatar.services.call_policy import select_call_voice, synthesize_call_segment
+        if find_route(db, "tts", avatar_id):
+            try:
+                plan = select_call_voice(db, avatar_id)
+                connection = plan["row"]
+                event = begin_provider_usage(db, avatar_id, str(connection["id"]), plan["model"], "tts", input_units=len(payload.text))
+            except ProviderError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            target = selected.avatars_dir / avatar_id / "generated" / "audio" / f"{int(time.time())}-{uuid.uuid4().hex[:8]}.mp3"
+            started, status = time.perf_counter(), "interrupted"
+            try:
+                media_type = synthesize_call_segment(plan, payload.text, target)
+                status = "ok"
+                return FileResponse(target, media_type=media_type, filename=target.name)
+            except (MiniMaxError, AliyunError, ProviderError, OSError) as exc:
+                status = "failed"
+                raise HTTPException(502, str(exc)) from exc
+            finally:
+                finish_provider_usage(db, event, status, latency_ms=(time.perf_counter() - started) * 1000)
+        # Legacy assets have no connection ID. Never send a modern clone's ID
+        # through this compatibility account, nor use it to escape a blocked route.
+        if builtin or str(profile.get("provider") or "") != "aliyun":
+            raise HTTPException(400, "请配置与当前音色所属账号一致的语音合成路由")
         cloud = db.setting("cloud_services", {})
         if not bool(cloud.get("cloud_data_consent", False)):
             raise HTTPException(400, "尚未允许将待合成文字发送给云端服务商")
         try:
             result = AliyunAvatarClient(load_provider_key("aliyun")).synthesize(
-                payload.text,
-                voice_id=str(profile["external_id"]),
+                payload.text, voice_id=str(profile["external_id"]),
                 model=str(cloud.get("voice_tts_model", "qwen3-tts-vc-2026-01-22")),
             )
             urls = extract_urls(result.get("output", {}))

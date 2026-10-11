@@ -10,6 +10,8 @@ The current version is **0.1.0-rc.5 release candidate**, intended for local eval
 
 The source also includes five unreleased upgrades: first-run setup guidance, voice-call duration and estimated-budget controls, segmented speech, explicit document questions, and per-message memory controls. See [Unreleased changes](CHANGELOG.md). These new workflows have not completed live paid-service acceptance.
 
+Source fixes dated 2026-10-12 additionally cover import review and memory provenance, packages and database restore, background jobs, proactive contact, call exit, and cost reservations. Databases migrate to schema v9 with a pre-upgrade backup; current source rejects databases above its supported version. Older binaries do not retroactively gain this protection. Checks use synthetic materials, temporary databases, and provider substitutes. They do not establish new published binaries or live cloud/hardware acceptance.
+
 ## Desktop downloads
 
 Download and fully extract the ZIP for your device. Python is included; no separate Python installation is needed. These are unsigned preview builds.

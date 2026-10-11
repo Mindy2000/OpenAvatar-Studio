@@ -8,7 +8,7 @@ import subprocess
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from openavatar.config import Settings
 from openavatar.db import Database
@@ -511,7 +511,7 @@ def update_continuity_run(db: Database, run_id: str, *, status: str, provider: s
     db.execute(f"UPDATE continuity_runs SET {', '.join(fields)} WHERE id=?", tuple(values))
 
 
-def extract_video_keyframes(settings: Settings, db: Database, avatar_id: str, job_id: str, run_id: str, video_path: Path, contract: dict[str, Any]) -> list[dict[str, Any]]:
+def extract_video_keyframes(settings: Settings, db: Database, avatar_id: str, job_id: str, run_id: str, video_path: Path, contract: dict[str, Any], *, persist: bool = True) -> list[dict[str, Any]]:
     if not video_path.is_file() or shutil.which("ffmpeg") is None:
         return []
     output_dir = settings.avatars_dir / avatar_id / "generated" / "video_keyframes" / job_id
@@ -537,12 +537,18 @@ def extract_video_keyframes(settings: Settings, db: Database, avatar_id: str, jo
         size_score = min(35, round(path.stat().st_size / largest * 35))
         temporal_score = 15 if index == 1 else 10
         quality_score = 45 + size_score + temporal_score
-        row_id = db.execute(
-            "INSERT INTO video_keyframes(avatar_id,job_id,continuity_run_id,local_path,position_ms,quality_score,status,binding_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-            (avatar_id, job_id, run_id, relative, index * 2000, quality_score, "history_reference", json.dumps(binding, ensure_ascii=False), int(time.time())),
-        )
+        row_id = 0
+        if persist:
+            row_id = db.execute(
+                "INSERT INTO video_keyframes(avatar_id,job_id,continuity_run_id,local_path,position_ms,quality_score,status,binding_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (avatar_id, job_id, run_id, relative, index * 2000, quality_score, "history_reference", json.dumps(binding, ensure_ascii=False), int(time.time())),
+            )
         rows.append({"id": row_id, "local_path": relative, "position_ms": index * 2000, "quality_score": quality_score, "binding": binding})
     return rows
+
+
+class VideoFinalizationAborted(RuntimeError):
+    pass
 
 
 def finalize_video_continuity(
@@ -553,14 +559,22 @@ def finalize_video_continuity(
     job_id: str,
     run_id: str,
     video_path: Path,
+    commit_guard: Callable | None = None,
+    on_commit: Callable | None = None,
 ) -> dict[str, Any]:
+    def ensure_current(transaction):
+        if commit_guard is not None and not commit_guard(transaction):
+            raise VideoFinalizationAborted("任务已取消、恢复、结束或轮询租约已失效")
+    with db.transaction() as transaction:
+        ensure_current(transaction)
     run = get_continuity_run(db, avatar_id, run_id)
-    frames = extract_video_keyframes(settings, db, avatar_id, job_id, run_id, video_path, run["contract"])
+    frames = extract_video_keyframes(settings, db, avatar_id, job_id, run_id, video_path, run["contract"], persist=False)
+    with db.transaction() as transaction:
+        ensure_current(transaction)
     from openavatar.services.video_review import review_video_frames
 
     visual_review = review_video_frames(db, settings, avatar_id=avatar_id, contract=run["contract"], keyframes=frames)
     if not visual_review.get("sendable", True):
-        db.execute("UPDATE video_keyframes SET status='rejected' WHERE continuity_run_id=?", (run_id,))
         for frame in frames:
             frame["status"] = "rejected"
     findings = [
@@ -572,11 +586,22 @@ def finalize_video_continuity(
     score = round(sum(1 for item in findings if item["passed"]) / len(findings) * 100)
     review = {"score": score, "sendable": all(item["passed"] for item in findings[:2]) and bool(visual_review.get("sendable", False)), "manual_review": bool(visual_review.get("manual_review")), "findings": findings, "keyframes": frames, "visual_review": visual_review}
     now = int(time.time())
-    db.execute(
-        "INSERT INTO media_reviews(avatar_id,media_kind,asset_id,review_kind,status,score,findings_json,user_feedback_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-        (avatar_id, "video", 0, "continuity_and_artifact_review", "completed", score, json.dumps(findings, ensure_ascii=False), "{}", now, now),
-    )
-    update_continuity_run(db, run_id, status="approved" if review["sendable"] else "needs_review", review=review)
+    with db.transaction() as transaction:
+        transaction.execute("BEGIN IMMEDIATE")
+        ensure_current(transaction)
+        for frame in frames:
+            cursor = transaction.execute(
+                "INSERT INTO video_keyframes(avatar_id,job_id,continuity_run_id,local_path,position_ms,quality_score,status,binding_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (avatar_id, job_id, run_id, frame["local_path"], frame["position_ms"], frame["quality_score"], frame.get("status", "history_reference"), json.dumps(frame["binding"], ensure_ascii=False), now),
+            )
+            frame["id"] = int(cursor.lastrowid)
+        transaction.execute(
+            "INSERT INTO media_reviews(avatar_id,media_kind,asset_id,review_kind,status,score,findings_json,user_feedback_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (avatar_id, "video", 0, "continuity_and_artifact_review", "completed", score, json.dumps(findings, ensure_ascii=False), "{}", now, now),
+        )
+        transaction.execute("UPDATE continuity_runs SET status=?,review_json=?,updated_at=? WHERE id=? AND avatar_id=?", ("approved" if review["sendable"] else "needs_review", json.dumps(review, ensure_ascii=False), now, run_id, avatar_id))
+        if on_commit is not None:
+            on_commit(transaction, review)
     return review
 
 

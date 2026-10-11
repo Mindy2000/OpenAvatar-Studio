@@ -44,10 +44,16 @@ def main():
                         result.push({scenario, rejected, stopped: stopped.length,
                             cleaned: state.userMedia === null && state.videoCall === null && !state.videoCallStarting,
                             expectedEnd: scenario === 'create-failed' ? !ended : ended && cleanedBeforeEnd,
-                            remoteFailureVisible: scenario !== 'end-failed' || document.querySelector('#videoCallStatus').textContent.includes('远程会话释放失败')});
+                            remoteFailureVisible: scenario !== 'end-failed' || (document.querySelector('#videoCallStatus').textContent.includes('远程会话释放失败') && pendingVideoReleases.size === 1 && !!document.querySelector('#videoCallDetails [data-action="end-video-call"]'))});
                     }
                     let constructed = 0, started = 0;
                     window.SpeechRecognition = class {constructor(){constructed++;} start(){started++;}};
+                    window.confirm = () => true;
+                    listenVideoTurn();
+                    result.push({scenario:'speech-outside-call', passed: constructed === 0 && started === 0});
+                    // Consent applies to an active captured session, never a failed/ended call.
+                    state.videoCall = {id:'isolated-consent-session'};
+                    videoSession = {avatarId:state.currentId, preview:!!state.previewMode, call:state.videoCall, cancelled:false};
                     window.confirm = () => false;
                     listenVideoTurn();
                     result.push({scenario:'speech-declined', passed: constructed === 0 && started === 0});
@@ -58,6 +64,7 @@ def main():
                     api=original.api;prepareUserMedia=original.prepareUserMedia;
                     connectNorthLiveKit=original.connectNorthLiveKit;
                     window.confirm=original.confirm;window.SpeechRecognition=original.Recognition;
+                    videoSession=null;pendingVideoReleases.clear();
                     state.userMedia=null;state.videoCall=null;state.speechRecognition=null;
                 }
                 return result;

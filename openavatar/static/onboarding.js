@@ -125,8 +125,9 @@ async function configureSetupCapability(capability) {
   if (item?.scope === 'avatar' && setupGuideReport?.avatar && state.currentId !== setupGuideReport.avatar.id) {
     await openAvatar(setupGuideReport.avatar.id);
   }
-  await openSettings();
   setupGuideReturning = true;
+  await openSettings();
+  if (!document.querySelector('#settingsDialog')?.open) return;
   if (item?.source === 'legacy') {
     setSettingsTab('modelSettingsPanel');
     document.querySelector('#dialogConnectionList')?.scrollIntoView({block: 'center'});

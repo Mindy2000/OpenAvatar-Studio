@@ -7,8 +7,9 @@ from openavatar.providers import ChatProvider, ProviderConfig, load_provider_key
 from openavatar.services.ocr import detect_local_ocr
 
 
-def capability_report(db: Database, model_config: ProviderConfig, model_client: ChatProvider) -> dict[str, Any]:
-    model_available = model_client.available()
+def capability_report(db: Database, model_config: ProviderConfig | None, model_client: ChatProvider | None) -> dict[str, Any]:
+    model_available = model_client.available() if model_client is not None else False
+    model_config = model_config or ProviderConfig(mode="unconfigured", provider_name="聊天连接当前不可用", model="")
     selected_ocr = str(db.setting("selected_ocr_connection_id", "") or "")
     ocr_row = db.one("SELECT * FROM ocr_connections WHERE id=?", (selected_ocr,)) if selected_ocr else None
     detected_ocr = detect_local_ocr()
@@ -81,4 +82,25 @@ def capability_report(db: Database, model_config: ProviderConfig, model_client: 
         {"key": "proactive", "name": "主动联系", "status": "user_controlled", "running_at": "uses_chat_model", "provider": model_config.provider_name, "sends": "开启后会按当前对话模型的数据去向处理", "cost": "取决于当前模型连接", "consent": bool(model_config.cloud_data_consent)},
         {"key": "desktop", "name": "桌面应用与跨平台启动", "status": "packaging_ready", "running_at": "local", "provider": "Python Desktop Launcher + PyInstaller", "sends": "只启动本机服务，不上传数据", "cost": "免费工具链；未签名内测版可能有系统提示", "consent": True},
     ]
+    # Unified routes take precedence even when unavailable. A disabled route
+    # must never be presented as ready because an old global key still exists.
+    from openavatar.services.provider_hub import find_route, route_candidates, provider_key_name
+    capabilities = {"asr": "asr", "voice_clone": "voice_clone", "visual_generation": "image", "video": "realtime_video"}
+    rows.extend([
+        {"key": "tts", "name": "语音合成 TTS", "status": "needs_setup", "running_at": "unconfigured", "provider": "未配置", "sends": "待播放文字", "cost": "取决于服务连接", "consent": False},
+        {"key": "video_generation", "name": "视频生成", "status": "needs_setup", "running_at": "unconfigured", "provider": "未配置", "sends": "提示词与批准的参考图片", "cost": "取决于服务连接", "consent": False},
+    ])
+    capabilities.update({"tts": "tts", "video_generation": "video"})
+    for item in rows:
+        capability = capabilities.get(item["key"])
+        if not capability or not find_route(db, capability):
+            continue
+        candidates = route_candidates(db, capability)
+        supported = {"asr": {"minimax"}, "tts": {"minimax", "aliyun"}, "voice_clone": {"minimax", "aliyun"}, "image": {"minimax", "aliyun"}, "video": {"minimax", "aliyun", "openrouter"}, "realtime_video": {"north"}}[capability]
+        candidates = [entry for entry in candidates if entry[0]["provider_kind"] in supported and load_provider_key(provider_key_name(str(entry[0]["id"])))]
+        item.update(status="available" if candidates else "needs_setup", consent=bool(candidates),
+                    provider="、".join(str(entry[0]["display_name"]) for entry in candidates) if candidates else "已配置路由当前不可用",
+                    running_at="local" if candidates and all(entry[0]["provider_kind"] == "local" for entry in candidates) else "cloud",
+                    sends={"asr": "执行转写时上传所选音频", "voice_clone": "执行复刻时上传经授权的音频", "tts": "合成时发送待播放文字", "image": "生成时发送批准的参考图片与提示词", "video": "生成时发送批准的参考图片与提示词", "realtime_video": "发起通话时上传批准参考图；音频进入实时通话服务"}[capability],
+                    cost="按服务连接的估价记账；实际账单以服务商为准")
     return {"items": rows, "principle": "本地优先，每个能力独立配置；云端调用必须让用户知道发送内容、服务商和费用风险。"}

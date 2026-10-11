@@ -11,7 +11,7 @@ from typing import Any
 from openavatar.config import Settings
 from openavatar.db import Database
 from openavatar.providers import OpenAICompatibleClient, ProviderError, load_provider_key
-from openavatar.services.provider_hub import provider_key_name, record_provider_usage, route_candidates
+from openavatar.services.provider_hub import provider_key_name, begin_provider_usage, finish_provider_usage, route_candidates
 
 
 def _data_url(path: Path) -> str:
@@ -81,7 +81,7 @@ def review_video_frames(
         if not model:
             continue
         connection_id = str(connection["id"])
-        started = time.perf_counter()
+        started, event, status = time.perf_counter(), None, "interrupted"
         try:
             client = OpenAICompatibleClient(
                 str(connection["base_url"]),
@@ -90,6 +90,7 @@ def review_video_frames(
                 timeout=180,
                 api_key_required=str(connection.get("provider_kind")) != "local",
             )
+            event = begin_provider_usage(db, avatar_id, connection_id, model, "vision")
             raw = client.chat(
                 [
                     {"role": "system", "content": "你是数字人视频连续性质检员，只输出严格 JSON。"},
@@ -103,9 +104,12 @@ def review_video_frames(
             score = round(max(0.0, min(100.0, sum(scores) / 4 * 10 - artifact_penalty * 2)))
             sendable = bool(result.get("sendable")) and score >= 60 and artifact_penalty < 7
             review = {**result, "available": True, "sendable": sendable, "score": score, "provider": connection_id, "model": model}
-            record_provider_usage(db, avatar_id, connection_id, model, "vision", "ok", latency_ms=(time.perf_counter() - started) * 1000)
+            status = "ok"
             return review
         except (ProviderError, OSError, ValueError, json.JSONDecodeError) as exc:
+            status = "failed"
             errors.append(str(exc))
-            record_provider_usage(db, avatar_id, connection_id, model, "vision", "failed", latency_ms=(time.perf_counter() - started) * 1000, metadata={"error": str(exc)[:500]})
+        finally:
+            if event is not None:
+                finish_provider_usage(db, event, status, latency_ms=(time.perf_counter() - started) * 1000)
     return {"available": False, "sendable": False, "manual_review": True, "reason": "未配置可用的视觉审核路由，需要人工确认", "errors": errors[:3]}

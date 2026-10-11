@@ -10,7 +10,7 @@ from test_runtime import create_avatar, make_client
 
 
 def row(url='https://api.minimaxi.com/v1', costs=None):
-    return {'id':'price-test', 'enabled':1, 'provider_kind':'minimax', 'base_url':url,
+    return {'id':'price-test', 'enabled':1,'capabilities_json':'["voice_clone"]', 'provider_kind':'minimax', 'base_url':url,
             'config_json':json.dumps({'cost_estimates':costs or {}}),
             'consent_json':json.dumps({'voice_biometric':True}), 'budget_json':'{}'}
 

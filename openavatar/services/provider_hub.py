@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 
@@ -199,6 +200,8 @@ def _spent(db: Database, connection_id: str, since: int) -> float:
 def assert_allowed(db: Database, row: dict[str, Any], capability: str, *, upcoming_cost: float = 0) -> None:
     if not bool(row.get("enabled")):
         raise ProviderError("服务连接已停用")
+    if capability not in _loads(row.get("capabilities_json"), []):
+        raise ProviderError(f"服务连接未启用 {capability} 能力")
     if row.get("provider_kind") == "local":
         _validate_local_connection(str(row["base_url"]))
     consent = _loads(row.get("consent_json"), {})
@@ -233,7 +236,8 @@ def route_candidates(db: Database, capability: str, avatar_id: str = "") -> list
             assert_allowed(db, row, capability)
         except ProviderError:
             continue
-        model = str(route.get("model") or _loads(row.get("models_json"), {}).get(capability, ""))
+        override = route.get("model") if connection_id == route.get("primary_connection_id") else ""
+        model = str(override or _loads(row.get("models_json"), {}).get(capability, ""))
         result.append((row, model, route.get("config", {})))
     return result
 
@@ -295,13 +299,105 @@ def test_connection(db: Database, connection_id: str) -> dict[str, Any]:
     try:
         if row.get("provider_kind") == "local":
             _validate_local_connection(str(row["base_url"]))
-        models = discover_models(row) if any(c in _loads(row.get("capabilities_json"), []) for c in ("chat", "vision")) else []
-        status, message = "ok", f"连接成功" + (f"，发现 {len(models)} 个模型" if models else "")
+        if any(c in _loads(row.get("capabilities_json"), []) for c in ("chat", "vision")):
+            models = discover_models(row)
+            status, message = "ok", f"已读取模型列表，发现 {len(models)} 个模型；具体能力尚未实测"
+        else:
+            models = []
+            status, message = "untested", "配置已保存；该能力没有免费连通性探测，尚未验证地址、凭据或实际调用"
     except ProviderError as exc:
         status, message, models = "failed", str(exc), []
     now = int(time.time())
     db.execute("UPDATE provider_connections SET last_test_status=?,last_test_message=?,last_tested_at=?,updated_at=? WHERE id=?", (status, message, now, now, connection_id))
-    return {"ok": status == "ok", "message": message, "models": models, "tested_at": now}
+    return {"ok": status == "ok", "status": status, "message": message, "models": models, "tested_at": now}
+
+
+class UsageReservation(int):
+    """An integer event ID with in-flight identity across database restores."""
+    def __new__(cls, value: int, attempt_id: str = "", epoch: str = ""):
+        result = super().__new__(cls, value)
+        result.attempt_id, result.epoch = attempt_id, epoch
+        return result
+
+
+def begin_provider_usage(db: Database, avatar_id: str, connection_id: str, model: str, capability: str, *, input_units: int = 0, output_units: int = 0, estimated_cost: float | None = None, cost_ceiling: float | None = None, expected_epoch: str | None = None, metadata: dict[str, Any] | None = None) -> int:
+    """Reserve a conservative estimate before dispatch, atomically across processes.
+
+    Pending/failed/interrupted attempts remain counted: absence of a response is
+    not evidence of a refund. No provider request or credential read occurs here.
+    """
+    with db.transaction() as transaction:
+        transaction.execute("BEGIN IMMEDIATE")
+        saved = transaction.execute("SELECT * FROM provider_connections WHERE id=?", (connection_id,)).fetchone()
+        if not saved:
+            raise ProviderError("服务连接已删除")
+        row = dict(saved)
+        # This reader uses the SAME transaction as the reservation, including
+        # budget queries; a separate connection would reintroduce a race.
+        class Reader:
+            def one(self, sql, params=()):
+                value = transaction.execute(sql, params).fetchone()
+                return dict(value) if value else None
+        cost = estimate_provider_cost(row, capability, input_units=input_units, output_units=output_units)
+        if estimated_cost is not None:
+            cost = max(cost, _validate_cost(estimated_cost))
+        if cost_ceiling is not None and cost > _validate_cost(cost_ceiling) + 1e-10:
+            raise ProviderError("费用估价已改变，本次请求已停止；请重新确认额度")
+        budget = _loads(row.get("budget_json"), {})
+        custom = _loads(row.get("config_json"), {}).get("cost_estimates", {})
+        known = row.get("provider_kind") == "local" or capability in custom or cost > 0
+        if not known and any(float(budget.get(key, 0) or 0) > 0 for key in ("daily", "monthly")):
+            raise ProviderError(f"请先填写 {capability} 的人民币单次估价，才能在预算限制下调用")
+        assert_allowed(Reader(), row, capability, upcoming_cost=cost)
+        epoch_row = transaction.execute("SELECT value FROM schema_meta WHERE key='notification_epoch'").fetchone()
+        epoch = str(epoch_row["value"]) if epoch_row else ""
+        if expected_epoch is not None and epoch != expected_epoch:
+            raise ProviderError("数据库已恢复，请重新开始任务")
+        details = {**(metadata or {}), "attempt_id": uuid.uuid4().hex, "database_epoch": epoch, "estimate_known": known, "settlement": "estimated" if known else "unknown",
+                   "pricing_snapshot": {"provider_kind": row["provider_kind"], "base_url": row["base_url"], "config_json": json.dumps({"cost_estimates": custom})},
+                   "reserved_cost": cost}
+        cursor = transaction.execute(
+            "INSERT INTO usage_events(avatar_id,provider,model,role,operation,status,latency_ms,estimated_cost,metadata_json,created_at) VALUES(?,?,?,?,?,'pending',0,?,?,?)",
+            (avatar_id, connection_id, model, capability, capability, cost, json.dumps(details), int(time.time())),
+        )
+        return UsageReservation(int(cursor.lastrowid), details["attempt_id"], epoch)
+
+
+def finish_provider_usage(db: Database, event_id: int, status: str, *, latency_ms: float = 0, metadata: dict[str, Any] | None = None, input_units: int | None = None, output_units: int | None = None) -> None:
+    """Settle once at frozen prices; failures keep the conservative reservation."""
+    with db.transaction() as transaction:
+        transaction.execute("BEGIN IMMEDIATE")
+        event = transaction.execute("SELECT metadata_json,status,estimated_cost,operation FROM usage_events WHERE id=?", (event_id,)).fetchone()
+        if not event or event["status"] != "pending":
+            return
+        stored = _loads(event["metadata_json"], {})
+        if isinstance(event_id, UsageReservation):
+            epoch_row = transaction.execute("SELECT value FROM schema_meta WHERE key='notification_epoch'").fetchone()
+            epoch = str(epoch_row["value"]) if epoch_row else ""
+            if stored.get("attempt_id") != event_id.attempt_id or event_id.epoch != epoch:
+                return
+        details = {**stored, **(metadata or {})}
+        if status != "ok":
+            details["settlement"] = "unknown"
+        cost = float(event["estimated_cost"])
+        if status == "ok" and input_units is not None and output_units is not None and details.get("pricing_snapshot"):
+            cost = estimate_provider_cost(details["pricing_snapshot"], str(event["operation"]), input_units=input_units, output_units=output_units)
+            details["input_units"], details["output_units"] = input_units, output_units
+        transaction.execute("UPDATE usage_events SET status=?,latency_ms=?,estimated_cost=?,metadata_json=? WHERE id=?", (status, latency_ms, cost, json.dumps(details), event_id))
+
+
+@contextmanager
+def provider_usage(db: Database, avatar_id: str, connection_id: str, model: str, capability: str, **kwargs):
+    event = begin_provider_usage(db, avatar_id, connection_id, model, capability, **kwargs)
+    started, status, details = time.perf_counter(), "interrupted", {}
+    try:
+        yield event
+        status = "ok"
+    except Exception as exc:
+        status, details = "failed", {"error": str(exc)[:500]}
+        raise
+    finally:
+        finish_provider_usage(db, event, status, latency_ms=(time.perf_counter() - started) * 1000, metadata=details)
 
 
 def record_provider_usage(db: Database, avatar_id: str, connection_id: str, model: str, capability: str, status: str, *, latency_ms: float = 0, estimated_cost: float = 0, metadata: dict[str, Any] | None = None) -> None:

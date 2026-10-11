@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import math
+import hashlib
 import shutil
 import sqlite3
+import tempfile
 import time
 import uuid
 import zipfile
 from pathlib import Path, PureWindowsPath
+from contextlib import contextmanager
 
 from openavatar.db import Database
 from openavatar.services.memory_intelligence import merged_memory_ids
@@ -54,9 +58,110 @@ def _validate_manifest(manifest: object) -> None:
             raise ValueError(f"人物包 {section} 必须是 JSON 对象")
 
 
+def _validate_package(archive: zipfile.ZipFile) -> None:
+    """Preflight and import share validation, including every asset's CRC."""
+    _validate_zip_members(archive.infolist())
+    names = archive.namelist()
+    if len(names) != len(set(names)):
+        raise ValueError("人物包包含重复文件名")
+    for name in PACKAGE_REQUIRED_FILES:
+        if name not in names:
+            raise ValueError(f"人物包缺少必要文件：{name}")
+    bad_member = archive.testzip()
+    if bad_member:
+        raise ValueError(f"人物包文件校验未通过：{bad_member}")
+    manifest = json.loads(archive.read('manifest.json'))
+    _validate_manifest(manifest)
+    if not str((manifest.get('avatar') or {}).get('name', '')).strip():
+        raise ValueError("人物包缺少人物名称")
+    objects = {'world_runtime_settings.json', 'proactive_rules.json', 'persona_core.json', 'language_profile.json', 'world_region_profile.json'}
+    object_json = {'attachment_json', 'before_json', 'after_json', 'settings_json', 'core_json', 'metadata_json', 'result_json', 'payload_json'}
+    array_json = {'traits_json', 'tags_json', 'facts_json', 'data_classes_json', 'invariants_json'}
+    numeric = {'memory_id', 'source_message_id', 'source_evidence_id', 'source_count', 'created_at', 'updated_at', 'occurred_at', 'reviewed_at', 'resolved_at', 'rolled_back_at', 'event_id', 'active_seconds', 'last_advanced_at', 'size_bytes', 'started_at', 'ended_at', 'confidence', 'weight', 'evidence_count', 'latency_ms', 'estimated_cost', 'asr_latency_ms', 'llm_latency_ms', 'tts_latency_ms', 'call_session_id', 'transcript_id', 'profile_id', 'proactive_interval_minutes'}
+
+    def validate_row(row: dict, location: str) -> None:
+        for key, value in row.items():
+            if key in numeric and value is None and key != 'source_evidence_id':
+                raise ValueError(f"人物包 {location}.{key} 不能为空")
+            if key in numeric and value is not None:
+                try:
+                    if key in {'confidence', 'weight', 'estimated_cost'}:
+                        if not math.isfinite(float(value)):
+                            raise ValueError('non-finite number')
+                    else:
+                        int(value)
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise ValueError(f"人物包 {location}.{key} 必须是数字") from exc
+            if key.endswith('_json'):
+                try:
+                    parsed = json.loads(value) if isinstance(value, str) else value
+                except (ValueError, TypeError) as exc:
+                    raise ValueError(f"人物包 {location}.{key} JSON 无效") from exc
+                expected = dict if key in object_json else list if key in array_json else None
+                if expected and not isinstance(parsed, expected):
+                    raise ValueError(f"人物包 {location}.{key} 结构无效")
+                if key == 'settings_json' and '_fact_event_ids' in parsed:
+                    ids = parsed['_fact_event_ids']
+                    if not isinstance(ids, list) or any(type(item) is not int for item in ids):
+                        raise ValueError('人物包世界快照事件列表无效')
+                if key == 'facts_json':
+                    for fact in parsed:
+                        if not isinstance(fact, dict):
+                            raise ValueError("人物包世界快照事实必须是对象")
+                        validate_row(fact, location + '.facts')
+    for name in PACKAGE_REQUIRED_FILES[1:] + PACKAGE_OPTIONAL_FILES:
+        if name not in names:
+            continue
+        value = json.loads(archive.read(name))
+        if name in objects:
+            if not isinstance(value, dict):
+                raise ValueError(f"人物包 {name} 必须是对象")
+            rows = [value]
+        else:
+            if not isinstance(value, list) or any(not isinstance(row, dict) for row in value):
+                raise ValueError(f"人物包 {name} 必须是对象数组")
+            rows = value
+        for row in rows:
+            validate_row(row, name)
+    for name in ('avatar', 'persona'):
+        validate_row(manifest.get(name) or {}, name)
+
+
+def _read_package_json(archive: zipfile.ZipFile, name: str):
+    def normalize(value):
+        if isinstance(value, dict):
+            return {key: json.dumps(item, ensure_ascii=False) if key.endswith('_json') and not isinstance(item, str) else normalize(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [normalize(item) for item in value]
+        return value
+    return normalize(json.loads(archive.read(name)))
+
+
+@contextmanager
+def _package_transaction(db: Database, asset_root: Path):
+    """Publish a unique staged asset folder before committing its database rows."""
+    asset_root.parent.mkdir(parents=True, exist_ok=True)
+    published = False
+    with tempfile.TemporaryDirectory(prefix='.package-', dir=asset_root.parent) as folder:
+        staged_root = Path(folder) / 'assets'
+        staged_root.mkdir()
+        try:
+            with db.transaction() as connection:
+                yield connection, staged_root
+                if asset_root.exists():
+                    raise ValueError('人物素材目录已存在，请重试导入')
+                staged_root.rename(asset_root)
+                published = True
+        except BaseException:
+            if published:
+                shutil.rmtree(asset_root, ignore_errors=True)
+            raise
+
+
 def inspect_avatar_package(archive_path: Path) -> dict:
     try:
         with zipfile.ZipFile(archive_path) as archive:
+            _validate_package(archive)
             members = archive.infolist()
             _validate_zip_members(members)
             names = {item.filename for item in members}
@@ -95,7 +200,7 @@ def inspect_avatar_package(archive_path: Path) -> dict:
                 "included_sections": [name for name in PACKAGE_REQUIRED_FILES + PACKAGE_OPTIONAL_FILES if name in names],
                 "warnings": warnings,
             }
-    except (zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
+    except (zipfile.BadZipFile, KeyError, json.JSONDecodeError, TypeError, OSError, RuntimeError) as exc:
         raise ValueError("人物包无法读取或 JSON 已损坏") from exc
 
 
@@ -120,7 +225,7 @@ def export_avatar(
         (avatar_id,),
     )
     evidence = db.all(
-        "SELECT source_type,title,content,tags_json,derived_kind,confidence,created_at FROM evidence WHERE avatar_id=? ORDER BY id",
+        "SELECT id,source_type,title,content,tags_json,derived_kind,confidence,created_at FROM evidence WHERE avatar_id=? ORDER BY id",
         (avatar_id,),
     )
     messages = db.all(
@@ -132,11 +237,11 @@ def export_avatar(
         (avatar_id,),
     )
     world_facts = db.all(
-        "SELECT fact_key,fact_value_json,reality_kind,mutability,status,confidence,active,created_at,updated_at FROM world_facts WHERE avatar_id=? ORDER BY id",
+        "SELECT fact_key,fact_value_json,reality_kind,mutability,status,source_evidence_id,confidence,active,created_at,updated_at FROM world_facts WHERE avatar_id=? ORDER BY id",
         (avatar_id,),
     )
     world_events = db.all(
-        "SELECT event_key,title,summary,event_kind,status,occurred_at,payload_json,created_at FROM world_events WHERE avatar_id=? ORDER BY id",
+        "SELECT id,event_key,title,summary,event_kind,status,occurred_at,payload_json,created_at FROM world_events WHERE avatar_id=? ORDER BY id",
         (avatar_id,),
     )
     world_fact_proposals = db.all(
@@ -428,15 +533,23 @@ def delete_avatar_files(avatars_dir: Path, avatar_id: str) -> None:
 
 
 def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -> dict:
+    try:
+        return _import_avatar_package(db, avatars_dir, archive_path)
+    except (zipfile.BadZipFile, KeyError, json.JSONDecodeError, TypeError, OSError, RuntimeError, OverflowError, sqlite3.Error) as exc:
+        raise ValueError('人物包导入失败：文件损坏、字段无效或素材无法保存；未新增人物') from exc
+
+
+def _import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -> dict:
     with zipfile.ZipFile(archive_path) as archive:
+        _validate_package(archive)
         members = archive.infolist()
         _validate_zip_members(members)
         try:
-            manifest = json.loads(archive.read("manifest.json"))
-            memories = json.loads(archive.read("memories.json"))
-            messages = json.loads(archive.read("messages.json"))
+            manifest = _read_package_json(archive, "manifest.json")
+            memories = _read_package_json(archive, "memories.json")
+            messages = _read_package_json(archive, "messages.json")
             try:
-                evidence = json.loads(archive.read("evidence.json"))
+                evidence = _read_package_json(archive, "evidence.json")
             except KeyError:
                 evidence = []
             optional = {}
@@ -449,7 +562,7 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                 "realtime_call_sessions", "realtime_call_turns", "imports", "provider_assets",
             ]:
                 try:
-                    optional[name] = json.loads(archive.read(f"{name}.json"))
+                    optional[name] = _read_package_json(archive, f"{name}.json")
                 except KeyError:
                     optional[name] = {} if name in {"world_runtime_settings", "proactive_rules", "persona_core"} else []
         except (KeyError, json.JSONDecodeError) as exc:
@@ -481,7 +594,7 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                 return ""
             return (Path("avatars") / new_id / path).as_posix()
 
-        with db.transaction() as connection:
+        with _package_transaction(db, avatars_dir / new_id) as (connection, asset_root):
             connection.execute(
                     "INSERT INTO avatars(id,name,purpose,relationship,subject_kind,adult_subject,consent_confirmed,proactive_enabled,proactive_interval_minutes,usage_mode,avatar_primary_language,avatar_secondary_languages,avatar_response_mode,world_region,world_type,world_region_custom_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
@@ -560,13 +673,14 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                 if row.get("origin_kind") == "runtime_chat":
                     source_id = row.get("source_message_id", 0)
                     memory_source_links.append((memory_cursor.lastrowid, source_id if type(source_id) is int else 0))
+            evidence_ids = {}
             for row in evidence[:200000] if isinstance(evidence, list) else []:
                 if not isinstance(row, dict) or not str(row.get("content", "")).strip():
                     continue
                 tags_json = row.get("tags_json", "[]")
                 if not isinstance(tags_json, str):
                     tags_json = json.dumps(tags_json, ensure_ascii=False)
-                connection.execute(
+                evidence_cursor = connection.execute(
                     "INSERT INTO evidence(avatar_id,source_type,title,content,tags_json,derived_kind,confidence,created_at) VALUES(?,?,?,?,?,?,?,?)",
                     (
                         new_id,
@@ -579,6 +693,8 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                         int(row.get("created_at", now)),
                     ),
                 )
+                if type(row.get('id')) is int and row['id'] > 0:
+                    evidence_ids[row['id']] = evidence_cursor.lastrowid
             message_ids = {}
             for row in messages[:100000] if isinstance(messages, list) else []:
                 if not isinstance(row, dict) or row.get("role") not in {"user", "assistant", "system"}:
@@ -636,7 +752,7 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                 if not isinstance(row, dict) or not str(row.get("fact_key", "")).strip():
                     continue
                 connection.execute(
-                    "INSERT INTO world_facts(avatar_id,fact_key,fact_value_json,reality_kind,mutability,status,confidence,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO world_facts(avatar_id,fact_key,fact_value_json,reality_kind,mutability,status,source_evidence_id,confidence,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         new_id,
                         str(row["fact_key"])[:200],
@@ -644,6 +760,7 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                         str(row.get("reality_kind", "fictional_canon"))[:80],
                         str(row.get("mutability", "evolving"))[:80],
                         str(row.get("status", "fact"))[:50],
+                        evidence_ids.get(row.get('source_evidence_id')),
                         min(max(float(row.get("confidence", 1)), 0), 1),
                         int(bool(row.get("active", True))),
                         int(row.get("created_at", now)),
@@ -693,10 +810,11 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                         int(runtime.get("updated_at", now)),
                     ),
                 )
+            event_ids = {}
             for row in optional["world_events"][:100000] if isinstance(optional["world_events"], list) else []:
                 if not isinstance(row, dict):
                     continue
-                connection.execute(
+                event_cursor = connection.execute(
                     "INSERT INTO world_events(avatar_id,event_key,title,summary,event_kind,status,occurred_at,payload_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
                     (
                         new_id,
@@ -710,6 +828,8 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                         int(row.get("created_at", now)),
                     ),
                 )
+                if type(row.get('id')) is int and row['id'] > 0:
+                    event_ids[row['id']] = event_cursor.lastrowid
             for row in optional["world_fact_proposals"][:100000] if isinstance(optional["world_fact_proposals"], list) else []:
                 if not isinstance(row, dict) or not str(row.get("fact_key", "")).strip():
                     continue
@@ -957,9 +1077,17 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
             for row in optional["world_snapshots"][:10000] if isinstance(optional["world_snapshots"], list) else []:
                 if not isinstance(row, dict):
                     continue
+                snapshot_facts = json.loads(row.get('facts_json') or '[]')
+                for fact in snapshot_facts:
+                    fact['avatar_id'] = new_id
+                    fact['source_evidence_id'] = evidence_ids.get(fact.get('source_evidence_id'))
+                snapshot_settings = json.loads(row.get('settings_json') or '{}')
+                snapshot_settings['avatar_id'] = new_id
+                if '_fact_event_ids' in snapshot_settings:
+                    snapshot_settings['_fact_event_ids'] = [event_ids[item] for item in snapshot_settings['_fact_event_ids'] if item in event_ids]
                 connection.execute(
                     "INSERT INTO world_snapshots(avatar_id,event_id,day_key,facts_json,settings_json,created_at,rolled_back_at) VALUES(?,?,?,?,?,?,?)",
-                    (new_id, int(row.get("event_id", 0)), str(row.get("day_key", ""))[:40], str(row.get("facts_json", "[]"))[:500000], str(row.get("settings_json", "{}"))[:100000], int(row.get("created_at", now)), int(row.get("rolled_back_at", 0))),
+                    (new_id, event_ids.get(row.get('event_id'), 0), str(row.get("day_key", ""))[:40], json.dumps(snapshot_facts, ensure_ascii=False), json.dumps(snapshot_settings, ensure_ascii=False), int(row.get("created_at", now)), int(row.get("rolled_back_at", 0))),
                 )
             for row in optional["memory_revisions"][:50000] if isinstance(optional["memory_revisions"], list) else []:
                 if not isinstance(row, dict):
@@ -968,6 +1096,16 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                 for prefix in ("合并 duplicate #", "合并到 #"):
                     if note.startswith(prefix) and note[len(prefix):].isdigit():
                         note = prefix + str(memory_ids.get(int(note[len(prefix):]), 0))
+                if row.get('action') == 'consolidate':
+                    try:
+                        provenance = json.loads(note)
+                        provenance['source_ids'] = [memory_ids.get(item, 0) for item in provenance.get('source_ids', [])]
+                        sources = [connection.execute('SELECT id,speaker,content FROM memories WHERE id=? AND avatar_id=?', (item, new_id)).fetchone() for item in provenance['source_ids']]
+                        if sources and all(sources):
+                            provenance['digest'] = hashlib.sha256(json.dumps([(item['id'], item['speaker'], item['content']) for item in sources], ensure_ascii=False).encode()).hexdigest()
+                        note = json.dumps(provenance, sort_keys=True)
+                    except (ValueError, TypeError, AttributeError):
+                        note = '{}'
                 connection.execute(
                     "INSERT INTO memory_revisions(avatar_id,memory_id,before_json,after_json,action,note,created_at) VALUES(?,?,?,?,?,?,?)",
                     (new_id, memory_ids.get(row.get("memory_id"), 0) if type(row.get("memory_id")) is int else 0, str(row.get("before_json", "{}"))[:100000], str(row.get("after_json", "{}"))[:100000], str(row.get("action", ""))[:80], note, int(row.get("created_at", now))),
@@ -1048,16 +1186,15 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                     "INSERT INTO realtime_call_turns(avatar_id,call_session_id,user_transcript,assistant_text,asr_latency_ms,llm_latency_ms,tts_latency_ms,interrupted,metadata_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (new_id, int(row.get("call_session_id", 0)), str(row.get("user_transcript", ""))[:20000], str(row.get("assistant_text", ""))[:20000], int(row.get("asr_latency_ms", 0)), int(row.get("llm_latency_ms", 0)), int(row.get("tts_latency_ms", 0)), int(bool(row.get("interrupted", False))), str(row.get("metadata_json", "{}"))[:100000], int(row.get("created_at", now))),
                 )
-        asset_root = avatars_dir / new_id
-        for item in members:
-            path = Path(item.filename)
-            if item.is_dir() or not path.parts or path.parts[0] != "assets":
-                continue
-            relative = Path(*path.parts[1:])
-            destination = (asset_root / relative).resolve()
-            if asset_root.resolve() not in destination.parents:
-                raise ValueError("人物包素材路径非法")
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            with archive.open(item) as source, destination.open("wb") as target:
-                shutil.copyfileobj(source, target)
+            for item in members:
+                path = Path(item.filename)
+                if item.is_dir() or not path.parts or path.parts[0] != "assets":
+                    continue
+                relative = Path(*path.parts[1:])
+                destination = (asset_root / relative).resolve()
+                if asset_root.resolve() not in destination.parents:
+                    raise ValueError("人物包素材路径非法")
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(item) as source, destination.open("wb") as target:
+                    shutil.copyfileobj(source, target)
     return {"id": new_id, "name": str(avatar["name"]), "memories": len(memories), "messages": len(messages)}

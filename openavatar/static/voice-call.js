@@ -324,6 +324,7 @@ function voiceCallControls(call) {
 }
 async function openVoiceWindow() {
   if (!state.currentId) return;
+  if (typeof stopSpeechPlayback === "function") stopSpeechPlayback();
   $("#callChoiceDialog")?.close();
   if (typeof cancelVoiceMessage === "function") cancelVoiceMessage();
   const dialog = $('#voiceCallDialog');
@@ -361,7 +362,7 @@ $('#startVoiceCall').addEventListener('click', openVoiceWindow);
 $('#connectVoiceCall').addEventListener('click', () => {
   if (!state.currentId || activeVoiceCall?.active) return;
   if (!state.current?.readiness?.can_start_official) { $('#voiceCallStatus').textContent = tr('请先在构建中心完成必须项。'); return; }
-  if (state.videoCall?.id) { $('#voiceCallStatus').textContent = tr('请先结束视频通话。'); return; }
+  if (state.videoCall?.id || state.videoCallStarting) { $('#voiceCallStatus').textContent = tr('请先结束视频通话。'); return; }
   const primary = state.current?.language_profile?.avatar_primary_language || '';
   activeVoiceCall = new VoiceCallController({
     maxMinutes:Number($('#voiceCallMaxMinutes')?.value ?? 10),

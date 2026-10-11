@@ -20,7 +20,7 @@ from openavatar.services.call_policy import (
 )
 from openavatar.services.chat_runtime import ChatService
 from openavatar.services.http_security import LOCAL_HOSTS, same_origin
-from openavatar.services.provider_hub import assert_allowed
+from openavatar.services.provider_hub import assert_allowed, begin_provider_usage, finish_provider_usage
 
 
 class CallSpeechRequest(BaseModel):
@@ -35,21 +35,18 @@ def create_call_router(*, db: Database, runs: RunRegistry, chat: ChatService) ->
     # fresh call with explicit limits; an old token can never resume spending.
     sessions: dict[int, dict] = {}
 
-    def reserve_usage(avatar_id: str, row: dict, model: str, capability: str, cost: float, metadata: dict) -> int:
+    def reserve_usage(avatar_id: str, row: dict, model: str, capability: str, cost: float, metadata: dict, *, input_units: int = 0, output_units: int = 0) -> int:
         # Connection day/month checks must see an in-flight request, including
         # one whose browser playback was interrupted while synthesis continues.
-        return db.execute(
-            "INSERT INTO usage_events(avatar_id,provider,model,role,operation,status,estimated_cost,metadata_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-            (avatar_id, str(row["id"]), model, capability, capability, "reserved", cost,
-             json.dumps({**metadata, "estimate_reserved": True}), int(time.time())),
-        )
+        return begin_provider_usage(db, avatar_id, str(row["id"]), model, capability,
+                                    input_units=input_units, output_units=output_units, estimated_cost=cost,
+                                    cost_ceiling=cost, metadata={**metadata, "estimate_reserved": True})
 
     def finish_usage(usage_id: int, status: str, started: float) -> None:
         if usage_id:
             # Keep the reservation's original time and amount. Failures and
             # cancellation may still cost money; finalization never adds a row.
-            db.execute("UPDATE usage_events SET status=?,latency_ms=? WHERE id=?",
-                       (status, (time.perf_counter() - started) * 1000, usage_id))
+            finish_provider_usage(db, usage_id, status, latency_ms=(time.perf_counter() - started) * 1000)
 
     @router.post("/api/avatars/{avatar_id}/calls/{call_id}/speech")
     async def call_speech(avatar_id: str, call_id: int, payload: CallSpeechRequest, request: Request) -> FileResponse:
@@ -81,7 +78,7 @@ def create_call_router(*, db: Database, runs: RunRegistry, chat: ChatService) ->
             assert_allowed(db, row, "tts", upcoming_cost=cost)
             policy.reserve(cost)
             usage_id = reserve_usage(avatar_id, row, plan["model"], "tts", cost,
-                {"call_id": call_id, "run_id": payload.run_id, "segment_id": payload.segment_id})
+                {"call_id": call_id, "run_id": payload.run_id, "segment_id": payload.segment_id}, input_units=len(segment["text"]))
             await session["usage"]()
             policy.check()
             if session["run_id"] != payload.run_id:
@@ -208,7 +205,8 @@ def create_call_router(*, db: Database, runs: RunRegistry, chat: ChatService) ->
                 policy.reserve(cost)
                 if row:
                     usage_id = reserve_usage(avatar_id, row, client.model, "chat", cost,
-                        {"call_id": call_id, "run_id": run_id})
+                        {"call_id": call_id, "run_id": run_id},
+                        input_units=sum(len(str(m.get("content", ""))) for m in prepared["messages"]), output_units=80)
                 if cost:
                     await usage()
                 stream_method = getattr(client, "stream_chat", None)

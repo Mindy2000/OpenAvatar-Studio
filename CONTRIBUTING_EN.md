@@ -19,6 +19,8 @@ node scripts/test_voice_call_controller.cjs
 
 On Windows replace `.venv/bin/` with `.venv\Scripts\`; use `python` to create the environment if appropriate. UI checks create their own temporary data/server and remove test avatars afterward. They do not need your personal database. Pytest also isolates its data and uses a fresh in-memory credential store for each test, without reading or changing the OS keyring. Test credentials are discarded afterward.
 
+Pytest blocks external network access while permitting loopback protocol fixtures. Update substitutes when adding adapters or moving calls between modules so stale mocks cannot reach real services. Passing means local protocol/flow validation, not provider or hardware acceptance. Standalone scripts must set a temporary `OPENAVATAR_DATA_DIR` and empty credential backend before importing `openavatar.main`.
+
 The Node.js check exercises the call controller with local substitutes for the browser, microphone, and network; it does not call paid services.
 
 For manual development, run `.venv/bin/python -m uvicorn openavatar.main:app --host 127.0.0.1 --port 8767 --reload`. Set a separate `OPENAVATAR_DATA_DIR` first when you do not want to use personal data.

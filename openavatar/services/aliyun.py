@@ -72,6 +72,15 @@ def download_provider_asset(url: str, target: Path, *, max_bytes: int = 100 * 10
         raise AliyunError(f"下载云端结果失败：{exc}") from exc
 
 
+def aliyun_native_base_url(base_url: str) -> str:
+    """Keep the configured regional/custom origin, remove chat-only suffixes."""
+    value = base_url.rstrip("/")
+    for suffix in ("/compatible-mode/v1", "/api/v1", "/v1"):
+        if value.endswith(suffix):
+            return value[:-len(suffix)]
+    return value
+
+
 class AliyunAvatarClient:
     """DashScope adapter migrated from the single-person legacy project.
 

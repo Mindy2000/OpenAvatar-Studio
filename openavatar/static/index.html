@@ -277,6 +277,7 @@
               <label class="check-card full"><input id="proactiveAdvanceWorld" type="checkbox"><span><b>允许推动里世界轻微事件</b><small>高影响事件仍进入世界事实审批。</small></span></label>
             </div>
             <div class="button-stack"><button type="button" class="secondary" data-action="open-maintenance">数据维护</button></div>
+            <div id="proactiveRuntimeStatus" class="method-note" role="status"></div>
             <div class="button-stack"><button class="primary" data-action="save-proactive">保存主动联系设置</button><button class="secondary" data-action="export-avatar">导出完整人物包</button><button class="danger" data-action="delete-avatar">永久删除这个数字人</button></div>
           </section>
         </div>
@@ -404,7 +405,7 @@
   </dialog>
 
   <dialog id="settingsDialog">
-    <form method="dialog" class="dialog-card connection-dialog"><button class="dialog-close">×</button><span class="panel-kicker">模型与数据</span><h2>连接配置中心</h2><p>普通用户不需要编辑 .env。API Key 只在这里输入一次，保存到系统凭据库，页面不会回显，人物包也不会导出。</p>
+    <form method="dialog" class="dialog-card connection-dialog"><button type="button" class="dialog-close" aria-label="关闭设置">×</button><span class="panel-kicker">模型与数据</span><h2>连接配置中心</h2><p>普通用户不需要编辑 .env。API Key 只在这里输入一次，保存到系统凭据库，页面不会回显，人物包也不会导出。</p>
       <section class="connection-editor language-editor"><div class="section-subhead"><div><span>LANGUAGE</span><h3 data-i18n="settings.languageTitle">界面语言</h3></div><small data-i18n="settings.languageHelp">界面语言只影响系统文字，不会改变数字人的主要语言。</small></div><div class="language-switch"><button type="button" data-action="set-interface-language" data-language="zh-CN">中文</button><button type="button" data-action="set-interface-language" data-language="en-US">English</button></div></section>
       <div class="settings-tabs">
         <button type="button" class="active" data-action="settings-tab" data-settings-tab="providerHubPanel">服务与能力路由</button>

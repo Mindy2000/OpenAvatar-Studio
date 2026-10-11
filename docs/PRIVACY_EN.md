@@ -20,11 +20,11 @@ Do not put keys into connection URLs, advanced JSON, metadata, character setting
 
 - Standard launchers listen on `127.0.0.1`. HTTP writes and WebSockets check origins; this is not public multi-user authentication.
 - Analysis and chat may send persona, selected material, recent messages, and retrieved memory to a configured service. The hub stores per-capability/data-class consent; fallback can change the recipient provider.
-- MiniMax, Aliyun, OpenRouter, and other multimedia integrations receive supported text, audio, references, and video parameters. Billable media operations have UI confirmation. Once confirmed, background polling, downloads, and task retries do not prompt for every request.
+- MiniMax, Aliyun, OpenRouter, and other multimedia integrations receive supported text, audio, references, and video parameters. Billable media operations have UI confirmation. Once confirmed, background polling/downloads do not prompt for each request. Failed video review does not automatically regenerate for a fee; retries require explicit user action.
 - **OCR exception:** an already selected and authorized cloud OCR connection runs immediately during image upload, without another per-image prompt. Check OCR settings before uploading sensitive screenshots; local OCR or manual text are alternatives.
 - **Local model connections:** the hub and legacy model connections accept only HTTP/HTTPS URLs on `127.0.0.1`, `localhost`, or `::1`. Validation applies when saving and using connections, including old configurations. Model discovery and local model calls bypass environment proxies and reject redirects. This restricts this application’s destination; a locally installed model service may independently use the network.
 - A successful connection test does not prove every capability works. Some media-only tests make no generation request, and new routes do not uniformly require a recent successful test.
-- Daily/monthly budgets compare estimated local usage. Some providers record zero without custom estimates, so these are not hard caps on real bills.
+- Unified daily/monthly budgets include atomic pre-dispatch reservations. Unknown prices block budgeted calls; unbudgeted unknown estimates remain unknown, not free. Provider bills are not capped; legacy paths and independent OCR have the limitations below.
 - North/Atlas calls send identity images or Face URLs, room metadata, and realtime tracks. The frontend loads LiveKit from a CDN. Hangup requests session release; failures may require action with the provider.
 - **Browser speech input:** the microphone-to-text button in video calls uses browser SpeechRecognition, independently of configured voice providers and API keys. After explicit confirmation, the browser may send microphone audio to its own online recognition service. Availability, processing location and retention depend on the browser; offline recognition is not guaranteed. Cancel and type instead to avoid this path.
 - Dependency installation needs network access. Offline operation thereafter depends on actual model, OCR, media, and SDK configuration.
@@ -41,7 +41,7 @@ Deletion confirmation lists what remains. For complete removal, separately revie
 
 ## Logs and materials
 
-Image metadata removal is best effort and does not cover every format. Custom OCR commands run as argument lists without a shell; configure only trusted programs.
+Image metadata removal is best effort and does not cover every format. Custom OCR commands run as argument lists without a shell; configure only trusted programs. Local HTTP OCR bypasses proxies and rejects redirects so a local request cannot silently follow an external destination.
 
 Diagnostics, chat explanations, usage records, and logs can contain paths, user input, or provider errors. Review private content before sharing. Dedicated keys are isolated, but arbitrary provider error text is not guaranteed to be redacted.
 
@@ -70,10 +70,12 @@ The first-run guide only checks saved routes, consent, enabled state, credential
 Fixed on 2026-10-05: main chat and history search hide voice_call transcripts while retaining call cards; local transcripts remain available to model context. Disabling call-history export excludes call cards, voice_call messages, sessions/turns, and all reply diagnostics. Legacy synthesized audio cannot distinguish calls from auditions, so all generated/audio files are also omitted. Original recordings and voice-note attachments follow the audio option. This does not delete local data or independently authored persona settings or memories.
 
 
-### Voice-cloning estimate correction (2026-10-05)
+### Cost estimates and usage records (2026-10-12)
 
-The following estimate validation and pre-call budget checks apply only to voice-cloning capability routes in the unified service hub, including Aliyun connections selected through those routes. Without such a route, the legacy Aliyun connection can still be used; it does not have the same per-call CNY estimate validation or remaining-budget preflight. Prefer the unified service hub for new configurations.
+Unified capability routes check enabled state, consent and estimates before dispatch, atomically reserving daily/monthly estimated budgets. Concurrent requests share reserved amounts. Each request settles once using the estimate frozen at dispatch; later price edits do not change old records. Complete normal chat adjusts its estimate using returned characters. Failure, interruption or early truncation retains the conservative reservation with unknown settlement. Polling an existing video task does not charge another local generation estimate. Estimates are not actual debits or hard caps on provider bills.
 
-The old 1.5 default did not distinguish currency. Mainland MiniMax official endpoints now default to CNY 9.90 per voice, from the [official pricing page](https://platform.minimax.cn/docs/guides/pricing-paygo). The provider charges cloning at first synthesis; the app records the estimate at successful cloning to account for it early, not as an actual debit. Audition synthesis is separate.
+A daily/monthly budget without a reliable estimate blocks calls. Set a per-call CNY amount for the capability in advanced `cost_estimates`. Unknown prices without a configured budget can proceed but are recorded as unknown, not free. Some MiniMax capabilities retain code defaults; these are not promises of current provider pricing.
 
-International endpoints, proxies, and other services require an explicit per-call CNY estimate in cost_estimates.voice_clone. Valid custom estimates take precedence; negative, nonfinite, and zero cloud-cloning estimates are rejected. Before upload, the cloning estimate must fit remaining daily/monthly budgets. An unavailable configured cloning route cannot fall back to the legacy connection. This is not an atomic reservation for concurrent requests or a guarantee about actual bills. Other capabilities retain their existing estimation limits; this change addresses voice cloning specifically.
+Voice cloning still requires a valid per-call CNY estimate. The code default for Mainland MiniMax official endpoints is CNY 9.90 per voice; international endpoints, proxies and other services cannot inherit it. Valid custom values take precedence, and cloud cloning rejects zero, negative and nonfinite values. Cloning and audition synthesis are accounted separately. An unavailable configured route does not silently use an older account; voice ownership must match its account.
+
+Unified-budget guarantees do not cover legacy paths without the corresponding capability route (including legacy model, Aliyun and North configurations), or independently configured OCR. Prefer the unified service hub for new setups; legacy use still needs provider-side limits. Cancellation prevents subsequent local handling/activation, not guaranteed remote cancellation or refunds. This round adds no successful live-service acceptance claim.

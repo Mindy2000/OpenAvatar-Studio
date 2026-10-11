@@ -45,6 +45,7 @@
   "build.worldRegion": "World Region Rules",
   "build.languageProfile": "Language Profile",
   "literals": {
+    "关闭设置": "Close settings",
     "正在检查本地模型…": "Checking model…",
     "← 返回首页": "← Back Home",
     "身份与授权": "Identity & Rights",
@@ -1012,6 +1013,19 @@
     "当前语音连接地址或类型已改变，请重新开始通话": "The speech connection address or type changed. Start a new call"
   },
   "system": {
+    "聊天连接当前不可用": "The chat connection is currently unavailable",
+    "数据库已经恢复，旧回复未写入；请重新发送。": "The database was restored. The earlier reply was discarded; send your message again.",
+    "语音合成 TTS": "Speech synthesis (TTS)",
+    "待播放文字": "Text to be spoken",
+    "取决于服务连接": "Depends on the service connection",
+    "提示词与批准的参考图片": "Prompts and approved reference images",
+    "已配置路由当前不可用": "The configured route is currently unavailable",
+    "执行转写时上传所选音频": "Uploads the selected audio for transcription",
+    "执行复刻时上传经授权的音频": "Uploads authorized audio for voice cloning",
+    "合成时发送待播放文字": "Sends text for speech synthesis",
+    "生成时发送批准的参考图片与提示词": "Sends approved reference images and prompts for generation",
+    "发起通话时上传批准参考图；音频进入实时通话服务": "Uploads an approved reference image when starting a call; audio goes to the realtime call service",
+    "按服务连接的估价记账；实际账单以服务商为准": "Records the connection's cost estimate; the provider's bill is authoritative",
     "备份目标不能是当前数据库": "The backup destination cannot be the current database",
     "恢复文件不存在或不是有效备份": "The restore file is missing or is not a valid backup",
     "备份数据库完整性检查未通过": "Backup database integrity check failed",

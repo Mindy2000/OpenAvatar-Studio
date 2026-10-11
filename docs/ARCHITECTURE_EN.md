@@ -12,7 +12,7 @@ FastAPI serves local HTTP APIs, streaming chat, WebSockets, and a static fronten
 
 | Module | Responsibility |
 |---|---|
-| `config.py`, `db.py`, `migrations.py` | Configuration, SQLite WAL/transactions, migrations/backups; current schema v8 |
+| `config.py`, `db.py`, `migrations.py` | Configuration, SQLite WAL/transactions, migrations/backups; current schema v9 |
 | `application.py` | Shared application context |
 | `routes/` | System, avatar, import, world, identity, continuity, intelligence, media, archive, runtime, and chat APIs |
 | `routes/_shared.py` | Shared imports used by route modules; not safely removable based only on local references |
@@ -39,15 +39,15 @@ FastAPI serves local HTTP APIs, streaming chat, WebSockets, and a static fronten
 
 `imports`, `evidence`, and non-`runtime_chat` memories form imported history. `historical_memory_corrections` overlays corrections. `messages` stores runtime conversations, while `chat_timeline_branches` tracks active/archived official and preview branches. `source_message_id` associations limit changes to attributable memory and world effects.
 
-Migration and pre-restore backups use SQLite backup facilities. Packages include only protocol-listed transferable data and cannot replace database backups; full branch and historical-correction tables are not exported. See the [package protocol](OPENAVATAR_PACKAGE_EN.md).
+Schema v9 versions message context exclusions, memory provenance and proactive-attempt state. SQLite backups precede upgrades; current source rejects databases above its supported version. This protection is not retroactively present in old binaries; do not use those binaries to open upgraded databases. Restore validates application tables/columns, integrity and foreign keys and migrates a temporary copy before replacing current data. Pre-restore backups use the listed backups directory; restore resets the notification epoch. Packages include only protocol-listed transferable data and cannot replace database backups; full branch and historical-correction tables are not exported. See the [package protocol](OPENAVATAR_PACKAGE_EN.md).
 
 ## Providers and media
 
 `provider_connections` and `capability_routes` store providers, capabilities, consent, budgets, and routes. Connection IDs map dedicated keys to the OS store. Legacy `model_connections` and cloud settings remain supported. Avatar routes can override global choices. Candidates are filtered by enabled state, data consent and estimated budget; each consumer decides whether to try fallback candidates. Current chat image understanding uses only the first available candidate, retains the image on failure and requires a manual retry rather than silently switching providers.
 
-Voice-cloning capability routes call `prepare_voice_clone_cost` before upload to validate the per-call CNY estimate and remaining daily/monthly budgets. A configured but unavailable cloning route does not fall back to a legacy connection. With no cloning route configured, `routes/media_runtime.py` retains a legacy Aliyun path without equivalent estimate validation or budget preflight. These checks are neither atomic reservations for concurrent calls nor hard limits on provider bills.
+Voice-cloning capability routes call `prepare_voice_clone_cost` before upload to validate the per-call CNY estimate and remaining daily/monthly budgets. A configured but unavailable cloning route does not fall back to a legacy connection. With no cloning route configured, `routes/media_runtime.py` retains a legacy Aliyun path without equivalent estimate validation or budget preflight. Routed calls use BEGIN IMMEDIATE to reread connection/budget state and insert a pending reservation in one transaction. Completion settles once using the price frozen at dispatch; failures/interruption retain reservations with unknown settlement. A daily/monthly budget requires a reliable estimate; unbudgeted unknown prices may proceed with an unknown marker. This is not a hard provider billing cap. Independently configured OCR and legacy paths without the corresponding capability route (including legacy model, Aliyun and North configurations) do not share this guarantee.
 
-MiniMax, Aliyun, and OpenRouter differ in capabilities. Video adapters consume continuity reference contracts rather than a universal fixed primary/fallback order. Background workers poll/download results, FFmpeg extracts keyframes, and review determines retry or manual acceptance. Keyframes never automatically become canonical identity references.
+MiniMax, Aliyun, and OpenRouter differ in capabilities. Video adapters consume continuity reference contracts rather than a universal fixed primary/fallback order. Workers poll/download using the submitting connection and its endpoint/model/parameter snapshot. Changed endpoint/type or missing ownership stops polling rather than switching accounts. FFmpeg extracts keyframes; empty frames cannot pass. Failed review requires manual action, without automatic paid regeneration. Atomic job claims, polling leases and cancellation checks prevent duplicate dispatch and late asset activation. Keyframes never automatically become canonical identity references.
 
 North/Atlas creates/releases sessions. The browser loads LiveKit from a CDN and subscribes to avatar tracks; cloned TTS can be published to the room. Separately, `/ws/avatars/{id}/call` handles text input and streaming text output; binary realtime ASR is not integrated.
 
@@ -58,6 +58,13 @@ Browser voice calls connect with `voice=true` and locally preflight voice config
 Document questions are separate from uploads. After explicit confirmation, `chat_documents` extracts text from one attachment and makes at most one current-chat-service call, without automatic retry/failover. Limits are 2 MB for text, 10 MB/20 pages for PDFs, and 20,000 total characters. A resource-limited subprocess parses PDF text layers without OCR. Document content is reference data, not system instructions. The original stays local; chat saves questions, replies, and sources, without automatically reattaching the full text to every later chat.
 
 Chat memory actions reuse revisions, memory graphs, and persona caches. Correction/deactivation sets `context_excluded` on the source and same-turn messages, and retrieval ignores deactivated linked memories; original messages remain. Setup uses boolean `has_key` results and existing budget rules, passing `model_ready` into the original readiness checks instead of constructing a secret-bearing model client. It performs no network probes.
+
+
+`effective_memories` applies historical corrections, deactivation and official/preview scope consistently across chat, persona analysis, graphs and proactive prompts. Chat retrieval no longer truncates to the latest 1,000 rows; English keywords and Chinese bigrams select at most 12 memories. Persona Core recomputes dependency digests on read and skips unchanged writes. Consolidated summaries record source IDs/digests, deduplicate identical input and retire after source changes. Packages remap summary sources and snapshot evidence/event IDs.
+
+Proactive rules and enablement save together. Persisted attempts enforce intervals and rolling 24-hour counts; three consecutive failures pause contact. Configuration revisions invalidate pending greetings. Saving resumes a pause without erasing consumed attempts. Synchronous background work runs in threads with renewable leases held through completion. Notification epoch/cursor pairs resynchronize after restore; displayed notifications are acknowledged.
+
+Image caches bind source versions, active branches and matching replies. Timeline changes/restoration and memory deactivation clear related caches and reject late writes. Ordinary speech permits one pending request/player; a separate confirmed replay may synthesize and incur cost again. Video-page exit stops local devices first and compensates late session creation; failed remote release remains retryable. These local rules cannot guarantee remote cancellation.
 
 ## Runtime APIs
 

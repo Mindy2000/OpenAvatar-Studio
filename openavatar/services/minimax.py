@@ -218,6 +218,9 @@ class MiniMaxClient:
         result = self._get("video_query", path_values={"task_id": task_id})
         task = result.get("task") if isinstance(result.get("task"), dict) else result.get("data") or result
         status = str(task.get("status") or "unknown")
+        if status.lower() in {"failed", "failure", "cancelled", "canceled", "expired"}:
+            reason = task.get("error_message") or task.get("message") or task.get("error") or status
+            raise MiniMaxError(f"MiniMax 视频任务已终止（{status}）：{reason}")
         return {"status": status, "done": status.lower() in {"success", "completed", "succeeded"}, "urls": _nested_urls(result), "raw": result}
 
 

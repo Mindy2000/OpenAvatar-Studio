@@ -26,7 +26,7 @@ Add Speech Synthesis for spoken replies, or Vision with image consent for unders
 
 **Done when:** The saved connection and routes remain visible and the required capabilities meet their readiness conditions. A connection check does not prove every feature has made a successful real request; the reply in section 5 establishes your first chat result.
 
-Budgets use estimates and cannot guarantee a hard cap on actual bills. Unified service-hub voice-cloning routes have specific estimate validation and pre-call budget checks; the legacy Aliyun path does not have equivalent checks. Read the [cost and data boundaries](PRIVACY_EN.md) before cloning.
+Budgets use estimates, not hard caps on actual bills. Unified routes reserve estimates before dispatch; budgeted calls with unknown prices require a per-call CNY estimate first. Cloning has additional estimate validation; legacy paths without the corresponding capability route (including legacy model, Aliyun and North configurations) and independent OCR do not share the unified-budget guarantee. Read the [cost and data boundaries](PRIVACY_EN.md) before cloning.
 
 ## 3. Create an avatar and complete required items
 

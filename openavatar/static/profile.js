@@ -49,6 +49,7 @@ function renderReadinessBanner() {
   const node = $("#readinessBanner");
   const route = report.route === "fictional" ? ui("虚构设定路线", "Fictional path") : ui("真实素材路线", "Real-material path");
   if (report.can_start_official) {
+    if(state.previewMode){void stopConversationMedia();resetChatComposer();void cancelActiveChat();}
     state.previewMode = false;
     node.innerHTML = `<b>${route} · ${ui("正式可用", "Ready for official use")}</b><span>${ui("必须项已完成。推荐项和高级项可以继续补强。", "Required items are complete. Recommended and advanced items can still improve quality.")}</span>`;
     node.className = "readiness-banner official";

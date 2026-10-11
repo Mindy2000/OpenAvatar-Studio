@@ -44,6 +44,23 @@ def create_system_router(context: ApplicationContext) -> APIRouter:
             "recommendation": "第一次打开用步骤卡建立全局理解，进入系统后用轻量提示标出关键位置。",
         }
 
+    @router.get("/api/notifications/feed")
+    def notification_feed(after_id: int = 0, epoch: str = "", limit: int = 30) -> dict[str, Any]:
+        # Read identity and rows in one snapshot; restore resets the identity.
+        with db.connect() as connection:
+            connection.execute("BEGIN")
+            current = connection.execute("SELECT value FROM schema_meta WHERE key='notification_epoch'").fetchone()
+            current_epoch = str(current[0]) if current else ""
+            cursor = max(0, after_id) if epoch == current_epoch else 0
+            maximum = connection.execute("SELECT COALESCE(MAX(id),0) FROM user_notifications").fetchone()[0]
+            if cursor > maximum:
+                cursor = 0
+            items = connection.execute(
+                "SELECT id,avatar_id,kind,title,body,action_url,read_at,created_at FROM user_notifications "
+                "WHERE id>? AND read_at=0 ORDER BY id LIMIT ?", (cursor, min(max(limit, 1), 100)),
+            ).fetchall()
+            return {"epoch": current_epoch, "after_id": cursor, "items": [dict(row) for row in items]}
+
     @router.get("/api/notifications")
     def notifications(after_id: int = 0, limit: int = 30) -> list[dict[str, Any]]:
         return db.all(
@@ -52,8 +69,13 @@ def create_system_router(context: ApplicationContext) -> APIRouter:
         )
 
     @router.post("/api/notifications/{notification_id}/read")
-    def read_notification(notification_id: int) -> dict[str, Any]:
-        db.execute("UPDATE user_notifications SET read_at=? WHERE id=?", (int(time.time()), notification_id))
+    def read_notification(notification_id: int, epoch: str = "") -> dict[str, Any]:
+        with db.transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute("SELECT value FROM schema_meta WHERE key='notification_epoch'").fetchone()
+            if epoch and (not current or epoch != str(current[0])):
+                raise HTTPException(409, "数据库已恢复，请重新读取通知。")
+            connection.execute("UPDATE user_notifications SET read_at=? WHERE id=?", (int(time.time()), notification_id))
         return {"read": True, "id": notification_id}
 
     @router.get("/api/i18n/{language}")
@@ -266,8 +288,12 @@ def create_system_router(context: ApplicationContext) -> APIRouter:
 
     @router.get("/api/capabilities")
     def capabilities() -> dict[str, Any]:
-        model_config = provider_config(db, selected)
-        return capability_report(db, model_config, model_client(db, selected))
+        try:
+            model_config = provider_config(db, selected)
+            client = model_client(db, selected)
+        except (ProviderError, HTTPException):
+            model_config, client = None, None
+        return capability_report(db, model_config, client)
 
     @router.get("/api/settings/cloud-services")
     def get_cloud_service_settings() -> dict[str, Any]:
@@ -321,12 +347,7 @@ def create_system_router(context: ApplicationContext) -> APIRouter:
 
     @router.put("/api/settings/model-routes/{role}")
     def set_model_route(role: str, payload: ModelRouteUpdate) -> dict[str, Any]:
-        try:
-            values = payload.model_dump()
-            values["role"] = role
-            return update_route(db, values)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(409, "旧任务模型配置不参与当前运行，不能保存；请在统一服务中心配置能力路由。")
 
     @router.get("/api/voice/development-voices")
     def development_voices() -> list[dict[str, Any]]:

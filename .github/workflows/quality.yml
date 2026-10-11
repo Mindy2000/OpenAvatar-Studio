@@ -32,6 +32,8 @@ jobs:
         run: node scripts/test_voice_call_controller.cjs
       - name: Chat request controller checks
         run: node scripts/test_chat_controller.cjs
+      - name: Interaction lifecycle controller checks
+        run: node scripts/test_interaction_controller.cjs
       - name: Install browser
         run: python -m playwright install --with-deps chromium
       - name: Browser and WebSocket checks

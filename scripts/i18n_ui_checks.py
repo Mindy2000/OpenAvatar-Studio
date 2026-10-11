@@ -72,7 +72,8 @@ def main() -> None:
             english("#studioView", allowed=(user_text, "声"))
             english("#guidedBuilderPanel")
             page.evaluate("""() => {
-                state.currentImport = { id: 'test', preview: {
+                state.currentImport = { id: 'test', avatarId: state.currentId,
+                    reviewed: new Set(), excluded: new Set(), speakers: null, preview: {
                     import: {category:'chat'}, speakers:[{speaker:'声音样本',count:1}],
                     rows:[{id:1,speaker:'声音样本',content:'声音样本'}], total:1, truncated:false
                 }};

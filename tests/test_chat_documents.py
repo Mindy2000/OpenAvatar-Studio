@@ -286,7 +286,7 @@ def test_projected_provider_budget_blocks_before_call(tmp_path, monkeypatch):
     client, provider = client_for(tmp_path, monkeypatch)
     # Replace the client returned to prepare with a real metering wrapper.
     import openavatar.main as main
-    row = {'id': 'isolated', 'display_name': 'isolated', 'enabled': 1, 'provider_kind': 'custom_openai',
+    row = {'id': 'isolated', 'display_name': 'isolated', 'enabled': 1, 'capabilities_json': '["chat"]', 'provider_kind': 'custom_openai',
            'consent_json': '{"text":true}', 'budget_json': '{"daily":0.000001}',
            'config_json': '{"pricing":{"chat":{"per_1k_input":1}}}'}
     metered = MeteredChatProvider(provider, client.app.state.db, 'unused', row)

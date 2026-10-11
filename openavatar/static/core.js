@@ -1,4 +1,4 @@
-const state = { avatars: [], currentId: null, current: null, step: 1, currentImport: null, creationMode: "real", fictionalFlow: "guided", guided: null, guidedIndex: 0, previewMode: false, historyKind: "official", timelineKind: "official", modelConnections: [], selectedConnectionId: "", ocrConnections: [], selectedOcrId: "", pendingPackageFile: null, pendingVisualClassification: null, interfaceLanguage: "zh-CN", messages: {}, worldOptions: null, videoCall: null, videoCallStatus: null, livekit: null, livekitRoom: null, livekitAudioContext: null, livekitAudioDest: null, livekitAudioPromise: null, livekitSilenceSource: null, userMedia: null, speechRecognition: null, currentSpeechSource: null, callCameraEnabled: false, callMicrophoneEnabled: false, lastProactiveMessageId: 0, lastNotificationId: Number(localStorage.getItem("openavatar.lastNotificationId") || 0), activeChat: null };
+const state = { avatars: [], currentId: null, current: null, step: 1, currentImport: null, creationMode: "real", fictionalFlow: "guided", guided: null, guidedIndex: 0, previewMode: false, historyKind: "official", timelineKind: "official", modelConnections: [], selectedConnectionId: "", ocrConnections: [], selectedOcrId: "", pendingPackageFile: null, pendingVisualClassification: null, interfaceLanguage: "zh-CN", messages: {}, worldOptions: null, videoCall: null, videoCallStatus: null, livekit: null, livekitRoom: null, livekitAudioContext: null, livekitAudioDest: null, livekitAudioPromise: null, livekitSilenceSource: null, userMedia: null, speechRecognition: null, currentSpeechSource: null, callCameraEnabled: false, callMicrophoneEnabled: false, lastProactiveMessageId: 0, lastNotificationId: Number(localStorage.getItem("openavatar.lastNotificationId") || 0), notificationEpoch: localStorage.getItem("openavatar.notificationEpoch") || "", activeChat: null };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 // Capture only the original HTML, before any avatar or chat content is rendered.
@@ -113,17 +113,27 @@ function toast(message, error = false) {
   }
 }
 
+let notificationsPolling = false;
 async function pollNotifications() {
-  const items = await api(`/api/notifications?after_id=${state.lastNotificationId}`);
-  for (const item of items) {
-    state.lastNotificationId = Math.max(state.lastNotificationId, Number(item.id) || 0);
-    toast(`${systemText(item.title)}${item.body ? `: ${systemText(item.body)}` : ""}`);
-    if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(systemText(item.title), { body: systemText(item.body) || tr("OpenAvatar 后台任务有新进展") });
+  if (notificationsPolling) return;
+  notificationsPolling = true;
+  try {
+    const feed = await api(`/api/notifications/feed?after_id=${state.lastNotificationId}&epoch=${encodeURIComponent(state.notificationEpoch)}`);
+    state.notificationEpoch = feed.epoch;
+    state.lastNotificationId = feed.after_id;
+    for (const item of feed.items) {
+      await api(`/api/notifications/${item.id}/read?epoch=${encodeURIComponent(feed.epoch)}`, { method: "POST" });
+      state.lastNotificationId = Math.max(state.lastNotificationId, Number(item.id) || 0);
+      toast(`${systemText(item.title)}${item.body ? `: ${systemText(item.body)}` : ""}`);
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(systemText(item.title), { body: systemText(item.body) || tr("OpenAvatar 后台任务有新进展") });
+      }
     }
-    await api(`/api/notifications/${item.id}/read`, { method: "POST" });
+    localStorage.setItem("openavatar.lastNotificationId", String(state.lastNotificationId));
+    localStorage.setItem("openavatar.notificationEpoch", state.notificationEpoch);
+  } finally {
+    notificationsPolling = false;
   }
-  localStorage.setItem("openavatar.lastNotificationId", String(state.lastNotificationId));
 }
 
 function t(key, fallback = "") {
@@ -260,6 +270,7 @@ let avatarNavigationGeneration = 0;
 
 function showView(id) {
   if (id !== "#studioView") avatarNavigationGeneration++;
+  if (id !== "#studioView" && typeof stopConversationMedia === "function") void stopConversationMedia();
   if (id !== "#studioView" && typeof endVoiceCall === "function") endVoiceCall();
   $$(".view").forEach(node => node.classList.add("hidden"));
   $(id).classList.remove("hidden");
@@ -409,6 +420,7 @@ async function openAvatar(id) {
   // or bring the user back after they have chosen Home or Create.
   if (generation !== avatarNavigationGeneration) return;
   closeAuxiliaryDialogs();
+  if (typeof stopConversationMedia === "function") void stopConversationMedia();
   if (typeof cancelActiveChat === "function") void cancelActiveChat();
   if (typeof resetChatComposer === "function") resetChatComposer();
   if (typeof endVoiceCall === "function") endVoiceCall();

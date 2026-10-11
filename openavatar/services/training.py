@@ -99,7 +99,7 @@ def claim_job(db: Database, job_id: str, *, allowed_statuses: tuple[str, ...]) -
     with db.transaction() as connection:
         cursor = connection.execute(
             f"UPDATE training_jobs SET status='submitting',stage='正在安全提交任务',started_at=COALESCE(started_at,?),updated_at=? "
-            f"WHERE id=? AND status IN ({placeholders})",
+            f"WHERE id=? AND cancel_requested=0 AND status IN ({placeholders})",
             (now, now, job_id, *allowed_statuses),
         )
         return cursor.rowcount == 1
@@ -109,7 +109,7 @@ def request_cancel(db: Database, job_id: str) -> dict[str, Any]:
     current = get_job(db, job_id)
     if current["status"] in TERMINAL_STATUSES:
         return current
-    db.execute("UPDATE training_jobs SET cancel_requested=1,stage='正在取消',updated_at=? WHERE id=?", (int(time.time()), job_id))
+    db.execute("UPDATE training_jobs SET cancel_requested=1,stage='正在取消',updated_at=? WHERE id=? AND status NOT IN ('completed','failed','cancelled')", (int(time.time()), job_id))
     return get_job(db, job_id)
 
 

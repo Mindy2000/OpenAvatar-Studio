@@ -9,9 +9,10 @@ from typing import Any
 from uuid import uuid4
 
 from openavatar.db import Database
+from openavatar.services.chat_vision import invalidate_vision_caches
 from openavatar.services.memory_intelligence import (
     deactivate_merged_memories, exclude_chat_message_context, exclude_memory_chat_context,
-    rebuild_memory_graph, related_merged_memory_ids,
+    rebuild_memory_graph, related_merged_memory_ids, invalidate_consolidated_memories,
 )
 
 
@@ -274,14 +275,18 @@ def correct_historical_memory(db: Database, avatar_id: str, memory_id: int, payl
     if not memory:
         raise KeyError("永久历史记录不存在")
     now = _now()
-    db.execute(
-        """INSERT INTO historical_memory_corrections
+    with db.transaction() as connection:
+        connection.execute(
+            """INSERT INTO historical_memory_corrections
            (memory_id,avatar_id,corrected_speaker,corrected_content,note,created_at,updated_at)
            VALUES(?,?,?,?,?,?,?) ON CONFLICT(memory_id) DO UPDATE SET
            corrected_speaker=excluded.corrected_speaker,corrected_content=excluded.corrected_content,
            note=excluded.note,updated_at=excluded.updated_at""",
-        (memory_id, avatar_id, str(payload.get("speaker") or "")[:200], str(payload.get("content") or "")[:100000], str(payload.get("note") or "")[:1000], now, now),
-    )
+            (memory_id, avatar_id, str(payload.get("speaker") or "")[:200], str(payload.get("content") or "")[:100000], str(payload.get("note") or "")[:1000], now, now),
+        )
+        invalidate_consolidated_memories(connection, avatar_id, {memory_id}, now)
+        deactivate_merged_memories(connection, avatar_id, {memory_id}, now, '历史来源已纠正，合并记忆停用')
+    rebuild_memory_graph(db, avatar_id)
     return {"ok": True, "memory_id": memory_id, "raw_record_preserved": True}
 
 
@@ -413,6 +418,7 @@ def apply_change(db: Database, avatar_id: str, preview_token: str) -> dict[str, 
                 placeholders = ",".join("?" for _ in call_ids)
                 connection.execute(f"DELETE FROM realtime_call_turns WHERE avatar_id=? AND call_session_id IN ({placeholders})", (avatar_id, *call_ids))
                 connection.execute(f"DELETE FROM realtime_call_sessions WHERE avatar_id=? AND id IN ({placeholders})", (avatar_id, *call_ids))
+        invalidate_vision_caches(connection, avatar_id, timeline_kind)
         connection.execute("DELETE FROM chat_change_previews WHERE token=?", (preview_token,))
         connection.execute("UPDATE chat_timeline_branches SET updated_at=? WHERE id=?", (now, active))
         remaining = int(connection.execute(f"SELECT COUNT(*) FROM messages WHERE avatar_id=? AND {_message_filter(timeline_kind)}", (avatar_id,)).fetchone()[0])
@@ -437,6 +443,7 @@ def restore_branch(db: Database, avatar_id: str, branch_id: str) -> dict[str, An
             ("恢复时换出的时间线", json.dumps(current, ensure_ascii=False), now, active),
         )
         _replace_with_snapshot(connection, avatar_id, timeline_kind, json.loads(target["snapshot_json"] or "{}"))
+        invalidate_vision_caches(connection, avatar_id, timeline_kind)
         connection.execute(
             "UPDATE chat_timeline_branches SET status='active',label=?,snapshot_json='{}',updated_at=? WHERE id=?",
             ("当前时间线" if timeline_kind == "official" else "当前预览时间线", now, branch_id),

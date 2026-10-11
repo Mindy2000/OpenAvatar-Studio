@@ -21,6 +21,16 @@ def until(ws, event_type):
 
 def stub_costs(monkeypatch, *, chat_cost=.1, speech_cost=.1, synthesize=None):
     row = {'id': 'test-call-provider', 'provider_kind': 'minimax', 'config_json': '{}'}
+    # The shared ledger deliberately re-reads the database. Give the simulated
+    # provider a real saved connection instead of bypassing its authorization.
+    from openavatar.services.provider_hub import begin_provider_usage
+    def reserve_with_fixture(db, avatar_id, connection_id, model, capability, **kwargs):
+        if connection_id == row['id']:
+            db.execute("INSERT OR IGNORE INTO provider_connections(id,display_name,provider_kind,capabilities_json,consent_json,config_json,created_at,updated_at) VALUES(?,?,?,?,?,?,0,0)",
+                       (connection_id, 'isolated fixture', 'minimax', '["chat","tts"]', '{"text":true}',
+                        json.dumps({'cost_estimates': {'chat':chat_cost, 'tts':speech_cost}})))
+        return begin_provider_usage(db, avatar_id, connection_id, model, capability, **kwargs)
+    monkeypatch.setattr(calls, 'begin_provider_usage', reserve_with_fixture)
     monkeypatch.setattr(calls, 'select_call_chat', lambda prepared: (prepared['client'], row, chat_cost))
     monkeypatch.setattr(calls, 'select_call_voice', lambda *_: {'row': row, 'model': 'unchanged-voice-model', 'voice_id': 'approved-voice', 'config': {}})
     monkeypatch.setattr(calls, 'call_cost', lambda *_args, **_kwargs: speech_cost)
@@ -232,8 +242,8 @@ def configured_voice(client, avatar, *, key='isolated-test-key', consent=True, e
     assert client.post(base + f"/voice-profiles/{voice['id']}/select").status_code == 200
     connection = client.post('/api/provider-connections', json={
         'display_name': 'isolated-voice', 'provider_kind': 'minimax', 'api_key': key or 'isolated-test-key',
-        'capabilities': ['tts'], 'consent': {'text': consent}, 'enabled': enabled,
-        'models': {'tts': 'unchanged-voice-model'}, 'config': {'cost_estimates': {'tts': price}},
+        'capabilities': ['chat', 'tts'], 'consent': {'text': consent}, 'enabled': enabled,
+        'models': {'tts': 'unchanged-voice-model'}, 'config': {'cost_estimates': {'chat': .1, 'tts': price}},
     }).json()
     if route:
         assert client.put('/api/capability-routes', json={
@@ -431,7 +441,7 @@ def test_pending_speech_counts_towards_connection_budget_before_completion(tmp_p
                 try:
                     assert blocked.wait(2)
                     reserved = db.one("SELECT * FROM usage_events WHERE operation='tts'")
-                    assert reserved and reserved['status'] == 'reserved'
+                    assert reserved and reserved['status'] == 'pending'
                     assert reserved['estimated_cost'] == .1
                     ws.send_json({'type': 'call.interrupt'})
                     ws.send_json({'type': 'user.text', 'text': '第二轮'})
@@ -485,7 +495,7 @@ def test_interrupted_chat_updates_existing_pending_reservation(tmp_path, monkeyp
                 until(ws, 'assistant.delta')
                 assert blocked.wait(2)
                 record = db.one('SELECT * FROM usage_events')
-                assert record['status'] == 'reserved' and record['estimated_cost'] == .3
+                assert record['status'] == 'pending' and record['estimated_cost'] == .3
                 ws.send_json({'type': 'call.interrupt'})
                 until(ws, 'assistant.interrupted')
                 ws.send_json({'type': 'ping'})
