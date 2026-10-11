@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from typing import Any
 
 from openavatar.db import Database
@@ -90,11 +91,32 @@ def get_proactive_rules(db: Database, avatar_id: str) -> dict[str, Any]:
         "tone": str(row.get("tone") or DEFAULT_RULES["tone"]),
         "cooldown_after_user_reply_minutes": int(row.get("cooldown_after_user_reply_minutes") or DEFAULT_RULES["cooldown_after_user_reply_minutes"]),
         "updated_at": int(row.get("updated_at") or 0),
+        "runtime": {**(db.one("SELECT consecutive_failures,paused FROM proactive_runtime_state WHERE avatar_id=?", (avatar_id,)) or {}),
+                    "last_attempt": db.one("SELECT status,started_at,finished_at,error FROM proactive_attempts WHERE avatar_id=? ORDER BY id DESC LIMIT 1", (avatar_id,))},
     }
 
 
-def update_proactive_rules(db: Database, avatar_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def invalidate_proactive_config(connection, avatar_id: str) -> None:
+    connection.execute("""INSERT INTO proactive_runtime_state(avatar_id,config_revision,consecutive_failures,paused)
+        VALUES(?,?,0,0) ON CONFLICT(avatar_id) DO UPDATE SET config_revision=excluded.config_revision,consecutive_failures=0,paused=0""",
+        (avatar_id, uuid.uuid4().hex))
+
+
+def update_proactive_rules(db: Database, avatar_id: str, payload: dict[str, Any], *, avatar_settings: dict[str, Any] | None = None) -> dict[str, Any]:
     ensure_proactive_rules(db, avatar_id)
+    with db.transaction() as connection:
+        if avatar_settings is not None:
+            avatar = connection.execute("SELECT consent_confirmed FROM avatars WHERE id=?", (avatar_id,)).fetchone()
+            if not avatar or (avatar_settings['proactive_enabled'] and not avatar['consent_confirmed']):
+                raise ValueError("启用主动联系前必须完成身份和数据授权确认")
+            connection.execute("UPDATE avatars SET proactive_enabled=?,proactive_interval_minutes=?,updated_at=? WHERE id=?",
+                (int(avatar_settings['proactive_enabled']), avatar_settings['proactive_interval_minutes'], int(time.time()), avatar_id))
+        _write_proactive_rules(connection, avatar_id, payload)
+        invalidate_proactive_config(connection, avatar_id)
+    return get_proactive_rules(db, avatar_id)
+
+
+def _write_proactive_rules(connection, avatar_id: str, payload: dict[str, Any]) -> None:
     allowed_windows = payload.get("allowed_windows")
     if not isinstance(allowed_windows, list):
         allowed_windows = DEFAULT_RULES["allowed_windows"]
@@ -105,7 +127,7 @@ def update_proactive_rules(db: Database, avatar_id: str, payload: dict[str, Any]
     if not isinstance(topic_scope, list):
         topic_scope = DEFAULT_RULES["topic_scope"]
     now = int(time.time())
-    db.execute(
+    connection.execute(
         """
         UPDATE proactive_rules SET
           daily_max=?,
@@ -132,4 +154,3 @@ def update_proactive_rules(db: Database, avatar_id: str, payload: dict[str, Any]
             avatar_id,
         ),
     )
-    return get_proactive_rules(db, avatar_id)

@@ -132,7 +132,7 @@ def test_database_upgrade_creates_one_local_backup(tmp_path: Path):
     Database(path).initialize()
     backup = tmp_path / "legacy.before-v4.backup.sqlite"
     assert backup.is_file()
-    assert Database(path).one("SELECT value FROM schema_meta WHERE key='schema_version'")["value"] == "8"
+    assert Database(path).one("SELECT value FROM schema_meta WHERE key='schema_version'")["value"] == "9"
 
 
 def test_provider_hub_stores_key_outside_database_and_applies_capability_route(tmp_path: Path, monkeypatch):
@@ -815,7 +815,7 @@ def test_cloud_visual_job_uses_latest_avatar_images(tmp_path: Path, monkeypatch)
         assert len(visual_assets) >= 4
 
 
-def test_model_routes_are_development_defaults_and_editable(tmp_path: Path):
+def test_legacy_model_routes_are_read_only_and_direct_to_active_configuration(tmp_path: Path):
     with make_client(tmp_path) as client:
         routes = client.get("/api/settings/model-routes")
         assert routes.status_code == 200, routes.text
@@ -832,8 +832,8 @@ def test_model_routes_are_development_defaults_and_editable(tmp_path: Path):
                 "cost_class": "cheap",
             },
         )
-        assert updated.status_code == 200, updated.text
-        assert updated.json()["primary_model"] == "deepseek/deepseek-chat"
+        assert updated.status_code == 409, updated.text
+        assert client.get("/api/settings/model-routes").json() == routes.json()
 
 
 def test_avatar_scoped_model_settings_do_not_use_global_key(tmp_path: Path, monkeypatch):
@@ -1422,7 +1422,7 @@ def test_video_redirects_require_https_and_strip_cross_host_credentials():
 
 def test_aliyun_completed_video_requires_result_url(monkeypatch):
     class FakeAliyun:
-        def __init__(self, _key):
+        def __init__(self, _key, **kwargs):
             pass
 
         @staticmethod
@@ -1469,8 +1469,8 @@ def test_video_generation_job_submits_and_polls_async_provider(tmp_path: Path, m
         return "video/mp4"
 
     monkeypatch.setattr(media_runtime_routes, "start_video_generation", fake_start)
-    monkeypatch.setattr(media_runtime_routes, "poll_video_generation", fake_poll)
-    monkeypatch.setattr(media_runtime_routes, "download_video_result", fake_download)
+    monkeypatch.setattr("openavatar.services.media_jobs.poll_video_generation", fake_poll)
+    monkeypatch.setattr("openavatar.services.media_jobs.download_video_result", fake_download)
     with make_client(tmp_path) as client:
         avatar = create_avatar(client, name="视频任务角色", subject_kind="fictional")
         client.app.state.db.set_setting("cloud_services", {"cloud_data_consent": True, "camera_flip_enabled": True, "scene_background_enabled": True})
@@ -1557,7 +1557,7 @@ def test_minimax_preset_voice_uses_selected_profile_and_requires_route_consent(t
             calls.append((text, options["voice_id"]))
             return {"audio": b"ID3-test".hex()}
 
-    monkeypatch.setattr(archive_routes, "MiniMaxClient", FakeMiniMax)
+    monkeypatch.setattr("openavatar.services.minimax.MiniMaxClient", FakeMiniMax)
     with make_client(tmp_path) as client:
         avatar = create_avatar(client, subject_kind="fictional")
         base = f"/api/avatars/{avatar['id']}"

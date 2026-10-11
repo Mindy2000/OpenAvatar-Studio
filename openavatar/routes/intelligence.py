@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from openavatar.routes._shared import *
+from pydantic import Field
+
+
+class ProactiveSettingsPayload(ProactiveRulesPayload):
+    proactive_enabled: bool
+    proactive_interval_minutes: int = Field(default=360, ge=15, le=10080)
 
 
 def create_intelligence_router(context: ApplicationContext) -> APIRouter:
@@ -161,5 +167,15 @@ def create_intelligence_router(context: ApplicationContext) -> APIRouter:
     def save_proactive_rules(avatar_id: str, payload: ProactiveRulesPayload) -> dict[str, Any]:
         require_avatar(db, avatar_id)
         return update_proactive_rules(db, avatar_id, payload.model_dump())
+
+    @router.put("/api/avatars/{avatar_id}/proactive-settings")
+    def save_proactive_settings(avatar_id: str, payload: ProactiveSettingsPayload) -> dict[str, Any]:
+        require_avatar(db, avatar_id)
+        values = payload.model_dump()
+        try:
+            rules = update_proactive_rules(db, avatar_id, values, avatar_settings=values)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"rules": rules, "avatar": public_avatar(require_avatar(db, avatar_id))}
 
     return router

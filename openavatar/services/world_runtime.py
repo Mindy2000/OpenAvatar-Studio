@@ -96,6 +96,7 @@ def snapshot_world(db: Database, avatar_id: str, event_id: int = 0) -> int:
     settings = db.one("SELECT * FROM world_runtime_settings WHERE avatar_id=?", (avatar_id,)) or {}
     now = int(time.time())
     day_key = time.strftime("%Y-%m-%d", time.localtime(now))
+    settings['_fact_event_ids'] = [row['id'] for row in db.all("SELECT id FROM world_events WHERE avatar_id=? AND status='fact'", (avatar_id,))]
     snapshot_id = db.execute(
         "INSERT INTO world_snapshots(avatar_id,event_id,day_key,facts_json,settings_json,created_at) VALUES(?,?,?,?,?,?)",
         (avatar_id, event_id, day_key, json.dumps(facts, ensure_ascii=False), json.dumps(settings, ensure_ascii=False), now),
@@ -150,7 +151,7 @@ def advance_world(db: Database, avatar_id: str, *, seconds: int = 3600, force_mi
         event_key, title, summary, effects = region_events[index]
         unique_event_key = f"{event_key}_{current_bucket}"
         existing_event = db.one(
-            "SELECT * FROM world_events WHERE avatar_id=? AND event_key=?", (avatar_id, unique_event_key)
+            "SELECT * FROM world_events WHERE avatar_id=? AND event_key=? AND status='fact'", (avatar_id, unique_event_key)
         )
         event_id = int(existing_event["id"]) if existing_event else db.execute(
             "INSERT INTO world_events(avatar_id,event_key,title,summary,event_kind,status,occurred_at,payload_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
@@ -215,6 +216,12 @@ def rollback_last_event(db: Database, avatar_id: str) -> dict[str, Any]:
                 "UPDATE world_runtime_settings SET active_seconds=?,last_advanced_at=?,updated_at=? WHERE avatar_id=?",
                 (int(saved_settings.get("active_seconds", 0)), int(saved_settings.get("last_advanced_at", 0)), now, avatar_id),
             )
+            event_ids = saved_settings.get('_fact_event_ids')
+            for event in connection.execute("SELECT id,payload_json FROM world_events WHERE avatar_id=? AND status='fact' AND event_kind='minor_runtime'", (avatar_id,)).fetchall():
+                # Legacy snapshots have no event list; runtime clocks provide the boundary.
+                later = event['id'] not in event_ids if isinstance(event_ids, list) else int(_loads(event['payload_json'], {}).get('active_seconds', -1)) > int(saved_settings.get('active_seconds', 0))
+                if later:
+                    connection.execute("UPDATE world_events SET status='rolled_back' WHERE id=?", (event['id'],))
         connection.execute("UPDATE world_snapshots SET rolled_back_at=? WHERE id=?", (now, snapshot["id"]))
     return {"rolled_back": True, "snapshot_id": snapshot["id"], **runtime_state(db, avatar_id)}
 

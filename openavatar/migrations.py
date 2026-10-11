@@ -4,7 +4,7 @@ import sqlite3
 import time
 
 
-LATEST_SCHEMA_VERSION = 8
+LATEST_SCHEMA_VERSION = 9
 
 
 MIGRATION_5 = """
@@ -230,6 +230,96 @@ ON user_notifications(read_at,created_at DESC);
 """
 
 
+
+MIGRATION_9 = """
+CREATE TABLE IF NOT EXISTS proactive_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    avatar_id TEXT NOT NULL REFERENCES avatars(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending',
+    started_at INTEGER NOT NULL,
+    finished_at INTEGER NOT NULL DEFAULT 0,
+    error TEXT NOT NULL DEFAULT '',
+    config_revision TEXT NOT NULL DEFAULT '',
+    message_id INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_proactive_attempts_avatar ON proactive_attempts(avatar_id,started_at DESC);
+CREATE TABLE IF NOT EXISTS proactive_runtime_state (
+    avatar_id TEXT PRIMARY KEY REFERENCES avatars(id) ON DELETE CASCADE,
+    config_revision TEXT NOT NULL DEFAULT '',
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    paused INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+
+def _migration_9_columns(connection: sqlite3.Connection) -> None:
+    memory_columns = {row[1] for row in connection.execute("PRAGMA table_info(memories)")}
+    if "is_avatar" not in memory_columns:
+        connection.execute("ALTER TABLE memories ADD COLUMN is_avatar INTEGER NOT NULL DEFAULT 0")
+    memory_column_defaults = {
+        "origin_kind": "TEXT NOT NULL DEFAULT 'legacy_baseline'",
+        "source_message_id": "INTEGER NOT NULL DEFAULT 0",
+        "timeline_kind": "TEXT NOT NULL DEFAULT 'official'",
+    }
+    for column, definition in memory_column_defaults.items():
+        if column not in memory_columns:
+            connection.execute(f"ALTER TABLE memories ADD COLUMN {column} {definition}")
+    connection.execute("UPDATE memories SET origin_kind='imported_history' WHERE source_import_id IS NOT NULL AND origin_kind='legacy_baseline'")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_memories_message ON memories(avatar_id,source_message_id)")
+    message_columns = {row[1] for row in connection.execute("PRAGMA table_info(messages)")}
+    message_column_defaults = {
+        "turn_id": "TEXT NOT NULL DEFAULT ''",
+        "media_url": "TEXT NOT NULL DEFAULT ''",
+        "media_type": "TEXT NOT NULL DEFAULT ''",
+        "message_kind": "TEXT NOT NULL DEFAULT 'text'",
+        "attachment_json": "TEXT NOT NULL DEFAULT '{}'",
+        "starred": "INTEGER NOT NULL DEFAULT 0",
+        "client_key": "TEXT NOT NULL DEFAULT ''",
+        "context_excluded": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for column, definition in message_column_defaults.items():
+        if column not in message_columns:
+            connection.execute(f"ALTER TABLE messages ADD COLUMN {column} {definition}")
+    connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_key ON messages(avatar_id,client_key) WHERE client_key<>''")
+    world_event_columns = {row[1] for row in connection.execute("PRAGMA table_info(world_events)")}
+    if "source_message_id" not in world_event_columns:
+        connection.execute("ALTER TABLE world_events ADD COLUMN source_message_id INTEGER NOT NULL DEFAULT 0")
+    avatar_columns = {row[1] for row in connection.execute("PRAGMA table_info(avatars)")}
+    if "usage_mode" not in avatar_columns:
+        connection.execute("ALTER TABLE avatars ADD COLUMN usage_mode TEXT NOT NULL DEFAULT 'preview'")
+    avatar_column_defaults = {
+        "avatar_primary_language": "TEXT NOT NULL DEFAULT 'zh-CN'",
+        "avatar_secondary_languages": "TEXT NOT NULL DEFAULT '[]'",
+        "avatar_response_mode": "TEXT NOT NULL DEFAULT 'follow_user'",
+        "world_region": "TEXT NOT NULL DEFAULT 'mainland_china'",
+        "world_type": "TEXT NOT NULL DEFAULT 'realistic'",
+        "world_region_custom_json": "TEXT NOT NULL DEFAULT '{}'",
+    }
+    for column, definition in avatar_column_defaults.items():
+        if column not in avatar_columns:
+            connection.execute(f"ALTER TABLE avatars ADD COLUMN {column} {definition}")
+    avatar_model_columns = {row[1] for row in connection.execute("PRAGMA table_info(avatar_model_settings)")}
+    if "connection_id" not in avatar_model_columns:
+        connection.execute("ALTER TABLE avatar_model_settings ADD COLUMN connection_id TEXT NOT NULL DEFAULT ''")
+    model_connection_columns = {row[1] for row in connection.execute("PRAGMA table_info(model_connections)")}
+    if "last_tested_at" not in model_connection_columns:
+        connection.execute("ALTER TABLE model_connections ADD COLUMN last_tested_at INTEGER NOT NULL DEFAULT 0")
+    # Older voice calls used the chat channel. Match both sides of the
+    # same saved turn against the call transcript, never text alone.
+    connection.execute("""
+        UPDATE messages SET channel='voice_call'
+        WHERE channel='chat' AND turn_id<>'' AND (avatar_id,turn_id) IN (
+            SELECT u.avatar_id,u.turn_id FROM messages u
+            JOIN messages a ON a.avatar_id=u.avatar_id AND a.turn_id=u.turn_id
+                AND a.role='assistant'
+            JOIN realtime_call_turns t ON t.avatar_id=u.avatar_id
+                AND t.user_transcript=u.content AND t.assistant_text=a.content
+                AND ABS(t.created_at-a.created_at)<=1
+            WHERE u.role='user' AND u.turn_id<>''
+        )
+    """)
+
+
 def apply_migrations(connection: sqlite3.Connection, current_version: int) -> int:
     version = current_version
     if version < 5:
@@ -244,6 +334,13 @@ def apply_migrations(connection: sqlite3.Connection, current_version: int) -> in
     if version < 8:
         connection.executescript(MIGRATION_8)
         version = 8
+    if version < 9:
+        _migration_9_columns(connection)
+        connection.executescript(MIGRATION_9)
+        from uuid import uuid4
+        connection.execute("INSERT OR IGNORE INTO schema_meta(key,value,updated_at) VALUES('notification_epoch',?,?)",
+                           (uuid4().hex, int(time.time())))
+        version = 9
     connection.execute(
         "INSERT INTO schema_meta(key,value,updated_at) VALUES('schema_version',?,?) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",

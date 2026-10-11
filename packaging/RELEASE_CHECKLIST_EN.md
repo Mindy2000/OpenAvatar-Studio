@@ -11,6 +11,9 @@
 - [ ] Fix or accurately disclose known limits such as local-address validation; a documentation change is not a code fix.
 - [ ] Configure and verify GitHub private reporting; do not invent contact addresses or claim inactive reporting links work.
 - [ ] Complete the contributing guide's tests, lint, browser/WebSocket checks, and dependency audit.
+- [ ] Check schema v9 pre-upgrade backups and future-version rejection in the current build, unrelated-database restore rejection and restore undo with disposable databases.
+- [ ] Check legacy package compatibility, corruption rejection/write-failure rollback, source-ID mapping and export filtering using synthetic materials.
+- [ ] Cover concurrent reservations, late results after cancellation, manual video retry and proactive failure pauses with local regressions; distinguish these from live cloud/device acceptance.
 - [ ] Confirm Apache-2.0 and third-party/material rights boundaries.
 
 ## Before publishing desktop packages

@@ -68,7 +68,7 @@ def create_runtime_router(
         if source.parent != folder:
             raise HTTPException(400, "备份路径不合法")
         try:
-            safety = db.restore(source)
+            safety = db.restore(source, settings.data_dir / "backups")
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         return {"ok": True, "restored": safe, "safety_backup": safety.name, "integrity": db.integrity_check()}

@@ -4,7 +4,10 @@ from openavatar.routes._shared import *
 import base64
 
 from openavatar.services.minimax import MiniMaxClient, MiniMaxError
-from openavatar.services.provider_hub import prepare_voice_clone_cost, estimate_provider_cost, find_route, provider_key_name, record_provider_usage, route_candidates
+from openavatar.services.aliyun import aliyun_native_base_url
+from openavatar.services.video_runtime import video_connection_snapshot
+from openavatar.services.media_jobs import poll_video_jobs
+from openavatar.services.provider_hub import prepare_voice_clone_cost, estimate_provider_cost, find_route, provider_key_name, record_provider_usage, route_candidates, provider_usage
 from openavatar.services.continuity import (
     build_continuity_contract,
     continuity_prompt,
@@ -14,6 +17,46 @@ from openavatar.services.continuity import (
     register_key_image_candidate,
     update_continuity_run,
 )
+
+
+def _complete_generated_asset(db: Database, job: dict, result: dict, stage: str, provider: str, *, source_import_id: int | None = None) -> dict:
+    """Cancellation and activation share one transaction; late work cannot win."""
+    now = int(time.time())
+    kind = "voice" if job["job_type"] == "voice" else "visual"
+    with db.transaction() as transaction:
+        transaction.execute("BEGIN IMMEDIATE")
+        epoch = transaction.execute("SELECT value FROM schema_meta WHERE key='notification_epoch'").fetchone()
+        if job.get("_database_epoch") != (str(epoch["value"]) if epoch else ""):
+            raise HTTPException(409, "数据库已恢复，旧生成结果未启用")
+        current = transaction.execute("SELECT cancel_requested FROM training_jobs WHERE id=?", (job["id"],)).fetchone()
+        if not current:
+            raise HTTPException(409, "任务已删除")
+        cancelled = bool(current["cancel_requested"])
+        if not cancelled:
+            transaction.execute("UPDATE provider_assets SET active=0 WHERE avatar_id=? AND kind=?", (job["avatar_id"], kind))
+            transaction.execute(
+                "INSERT INTO provider_assets(avatar_id,kind,provider,external_id,source_import_id,metadata_json,created_at) VALUES(?,?,?,?,?,?,?)",
+                (job["avatar_id"], kind, provider, str(result.get("voice_id") or ""), source_import_id, json.dumps(result, ensure_ascii=False), now),
+            )
+        transaction.execute("UPDATE training_jobs SET status=?,progress=100,stage=?,result_json=?,updated_at=?,finished_at=? WHERE id=?",
+                            ("cancelled" if cancelled else "completed", "已停止本地处理；生成结果未启用，远端可能已计费" if cancelled else stage, json.dumps(result, ensure_ascii=False), now, now, job["id"]))
+    return get_job(db, job["id"])
+
+
+def _save_video_submission(db: Database, job: dict, result: dict, run_id: str, provider: str, stage: str) -> dict:
+    now = int(time.time())
+    with db.transaction() as transaction:
+        transaction.execute("BEGIN IMMEDIATE")
+        epoch = transaction.execute("SELECT value FROM schema_meta WHERE key='notification_epoch'").fetchone()
+        if job.get("_database_epoch") != (str(epoch["value"]) if epoch else ""):
+            raise HTTPException(409, "数据库已恢复，旧视频提交结果未写入")
+        row = transaction.execute("SELECT cancel_requested FROM training_jobs WHERE id=?", (job["id"],)).fetchone()
+        if not row:
+            raise HTTPException(409, "任务已删除")
+        cancelled = bool(row["cancel_requested"])
+        transaction.execute("UPDATE continuity_runs SET status='submitted',provider=?,provider_task_id=?,updated_at=? WHERE id=?", (provider, result["provider_task_id"], now, run_id))
+        transaction.execute("UPDATE training_jobs SET status=?,progress=35,stage=?,result_json=?,updated_at=? WHERE id=?", ("cancelled" if cancelled else "running", "已停止本地处理；远端任务可能已计费" if cancelled else stage, json.dumps(result, ensure_ascii=False), now, job["id"]))
+    return get_job(db, job["id"])
 
 
 def _job_reference_paths(db: Database, settings: Settings, avatar_id: str, job: dict[str, Any]) -> list[Path]:
@@ -71,7 +114,8 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
                 raise HTTPException(400, "North 实时视频通话会上传身份参考图并可能产生费用，请明确确认")
             if not settings_payload["cloud_data_consent"]:
                 raise HTTPException(400, "尚未允许实时视频通话所需数据发送给 North/Atlas")
-            settings_payload["north_api_key"] = settings_payload.get("north_api_key") or load_provider_key("north")
+            if not settings_payload.get("route_configured"):
+                settings_payload["north_api_key"] = settings_payload.get("north_api_key") or load_provider_key("north")
             if not settings_payload.get("north_api_key"):
                 raise HTTPException(400, "尚未配置 North/Atlas API Key")
         call_id = db.execute(
@@ -83,17 +127,22 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
             return row
         try:
             face_path = video_call_face_path(db, selected, avatar_id)
-            result = start_north_video_call(
-                settings_payload,
-                VideoCallStartRequest(
-                    avatar_id=avatar_id,
-                    call_id=call_id,
-                    avatar_name=str(avatar["name"]),
-                    user_camera_enabled=payload.user_camera_enabled,
-                    metadata=payload.metadata,
-                ),
-                face_path,
-            )
+            from contextlib import nullcontext
+            connection_id = str(settings_payload.get("connection_id") or "")
+            usage = provider_usage(db, avatar_id, connection_id, "", "realtime_video", metadata={"call_id": call_id}) if connection_id else nullcontext(None)
+            with usage as usage_id:
+                result = start_north_video_call(
+                    settings_payload,
+                    VideoCallStartRequest(
+                        avatar_id=avatar_id,
+                        call_id=call_id,
+                        avatar_name=str(avatar["name"]),
+                        user_camera_enabled=payload.user_camera_enabled,
+                        metadata=payload.metadata,
+                    ),
+                    face_path,
+                )
+            metadata.update(usage_event_id=usage_id, connection_id=connection_id, north_api_url=settings_payload.get("north_api_url"))
         except ProviderError as exc:
             db.execute(
                 "UPDATE realtime_call_sessions SET status='failed',ended_at=?,summary=?,metadata_json=? WHERE id=?",
@@ -292,13 +341,22 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
     @router.post("/api/avatars/{avatar_id}/training-jobs/{job_id}/run")
     def run_cloud_training_job(avatar_id: str, job_id: str, payload: TrainingRun) -> dict[str, Any]:
         avatar = require_avatar(db, avatar_id)
+        job_epoch = db.notification_epoch()
         job = get_job(db, job_id)
+        job["_database_epoch"] = job_epoch
         if job["avatar_id"] != avatar_id:
             raise HTTPException(404, "构建任务不存在")
         if job["job_type"] not in {"voice", "visual", "video"}:
             raise HTTPException(400, "该任务不需要云端构建")
-        if job["status"] == "completed":
+        if job["status"] in {"completed", "needs_review"}:
             return job
+        if job.get("cancel_requested") or job["status"] == "cancelled":
+            raise HTTPException(409, "任务已取消，请先明确重试后再执行")
+        if job["job_type"] == "video" and job["status"] == "running" and (job.get("result") or {}).get("provider_task_id"):
+            poll_video_jobs(db, selected, job_id=job_id)
+            return get_job(db, job_id)
+        if job["status"] in {"running", "submitting"}:
+            raise HTTPException(409, "任务正在执行，请等待当前请求完成")
         if not payload.confirm_billable_call:
             raise HTTPException(400, "这一操作会上传素材并可能产生 API 费用，请明确确认")
         cloud = db.setting("cloud_services", {})
@@ -378,6 +436,9 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
             reference_inputs = continuity_reference_inputs(selected, contract)
             routed_video = route_candidates(db, "video", avatar_id)
             routed_video_legacy = None
+            video_claimed = False
+            if not routed_video and find_route(db, "video", avatar_id):
+                raise HTTPException(400, "视频路由不可用：不会改用旧账号，请检查连接、授权和预算")
             if routed_video:
                 errors = []
                 for connection, model, route_config in routed_video:
@@ -398,61 +459,33 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
                         minimax_last_frame_url = str(minimax_last_frame[0]["url"]) if minimax_last_frame else ""
                         minimax_references = [str(item["url"]) for item in reference_inputs]
                         use_reference_mode = str(route_config.get("mode") or "auto") == "reference" or not minimax_first_frame
-                        task_id = str(current_result.get("provider_task_id") or "")
-                        if task_id and job["status"] == "running":
-                            polled = minimax.query_video(task_id)
-                            if not polled["done"]:
-                                return update_job(db, job_id, progress=50, stage=f"MiniMax 视频仍在生成：{polled['status']}", result={**current_result, "last_poll": polled})
-                            if not polled["urls"]:
-                                raise MiniMaxError("MiniMax 视频完成但没有返回下载地址")
-                            filename = f"{int(time.time())}-{uuid.uuid4().hex[:8]}.mp4"
-                            target = selected.avatars_dir / avatar_id / "generated" / "video" / filename
-                            media_type = download_video_result(str(polled["urls"][0]), target)
-                            review = finalize_video_continuity(
-                                db,
-                                selected,
-                                avatar_id=avatar_id,
-                                job_id=job_id,
-                                run_id=continuity_run_id,
-                                video_path=target,
+                        if not video_claimed:
+                            if not claim_job(db, job_id, allowed_statuses=("waiting_configuration", "queued")):
+                                raise HTTPException(409, "任务已由另一个请求提交，请刷新任务状态")
+                            video_claimed = True
+                        if get_job(db, job_id).get("cancel_requested"):
+                            return update_job(db, job_id, status="cancelled", stage="任务已取消")
+                        with provider_usage(db, avatar_id, connection_id, model, "video", metadata={"job_id": job_id}, expected_epoch=job_epoch) as usage_id:
+                            started = minimax.create_video(
+                                prompt,
+                                model=model or "MiniMax-H3",
+                                first_frame_url="" if use_reference_mode else minimax_first_frame,
+                                last_frame_url="" if use_reference_mode else minimax_last_frame_url,
+                                reference_images=minimax_references if use_reference_mode else None,
+                                config=route_config,
                             )
-                            result = {**current_result, "asset_url": f"/api/avatars/{avatar_id}/generated/video/{filename}", "remote_url": polled["urls"][0], "media_type": media_type, "continuity_review": review}
-                            record_provider_usage(db, avatar_id, connection_id, model, "video", "ok", latency_ms=(time.perf_counter() - started_at) * 1000, estimated_cost=estimate_provider_cost(connection, "video"))
-                            if not review["sendable"] and review.get("visual_review", {}).get("available") and int(job.get("attempt") or 0) < 1:
-                                retry_prompt = f"{prompt}\n上一次视频连续性检查未通过。减少镜头运动，保持人物、服装、物品和场景结构完全稳定。"
-                                retry = minimax.create_video(
-                                    retry_prompt,
-                                    model=model or "MiniMax-H3",
-                                    first_frame_url="" if use_reference_mode else minimax_first_frame,
-                                    last_frame_url="" if use_reference_mode else minimax_last_frame_url,
-                                    reference_images=minimax_references if use_reference_mode else None,
-                                    config=route_config,
-                                )
-                                db.execute("UPDATE training_jobs SET attempt=attempt+1 WHERE id=?", (job_id,))
-                                update_continuity_run(db, continuity_run_id, status="resubmitted", provider=connection_id, provider_task_id=retry["task_id"])
-                                return update_job(db, job_id, status="running", progress=40, stage="首版未通过，已自动提交一次稳定性重试", result={**result, "provider_task_id": retry["task_id"], "previous_candidate_url": result["asset_url"], "auto_retry": True})
-                            return update_job(db, job_id, status="completed" if review["sendable"] else "needs_review", progress=100, stage="MiniMax 视频已生成并通过连续性验收" if review["sendable"] else "视频已生成，等待人工复核", result=result, error="")
-                        if not claim_job(db, job_id, allowed_statuses=("waiting_configuration", "queued", "failed")):
-                            raise HTTPException(409, "任务已由另一个请求提交，请刷新任务状态")
-                        started = minimax.create_video(
-                            prompt,
-                            model=model or "MiniMax-H3",
-                            first_frame_url="" if use_reference_mode else minimax_first_frame,
-                            last_frame_url="" if use_reference_mode else minimax_last_frame_url,
-                            reference_images=minimax_references if use_reference_mode else None,
-                            config=route_config,
-                        )
-                        update_continuity_run(db, continuity_run_id, status="submitted", provider=connection_id, provider_task_id=started["task_id"])
                         result = {
                             **current_result, "prompt": prompt, "provider": connection_id, "model": model,
+                            "connection_id": connection_id, "connection_snapshot": video_connection_snapshot(connection, model, route_config), "usage_event_id": usage_id,
                             "provider_task_id": started["task_id"], "provider_status": "submitted",
                             "video_mode": started.get("mode", "first_frame"),
                             "reference_audit": [{key: item.get(key) for key in ("set_type", "role", "visual_asset_id", "content_bytes")} for item in reference_inputs],
                         }
-                        return update_job(db, job_id, status="running", progress=35, stage="MiniMax 异步视频任务已提交", result=result)
-                    except (MiniMaxError, VideoGenerationError, OSError) as exc:
+                        return _save_video_submission(db, job, result, continuity_run_id, connection_id, "MiniMax 异步视频任务已提交")
+                    except (MiniMaxError, VideoGenerationError, ProviderError, OSError) as exc:
+                        if db.notification_epoch() != job_epoch:
+                            raise HTTPException(409, "数据库已恢复，旧任务结果已丢弃") from exc
                         errors.append(f"{connection['display_name']}：{exc}")
-                        record_provider_usage(db, avatar_id, connection_id, model, "video", "failed", latency_ms=(time.perf_counter() - started_at) * 1000, metadata={"error": str(exc)[:500]})
                 if not routed_video_legacy:
                     update_job(db, job_id, status="failed", stage="视频任务失败", error="；".join(errors))
                     raise HTTPException(502, "；".join(errors) or "没有可用的视频服务")
@@ -462,6 +495,7 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
                 video_key = load_provider_key(provider_key_name(str(video_connection["id"])))
                 settings_payload = VideoGenerationSettings(
                     provider=video_kind,
+                    openrouter_base_url=str(video_connection["base_url"]), aliyun_base_url=str(video_connection["base_url"]),
                     openrouter_api_key=video_key if video_kind == "openrouter" else "",
                     aliyun_api_key=video_key if video_kind == "aliyun" else "",
                     openrouter_model=video_model or "google/veo-3.1-fast",
@@ -486,62 +520,28 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
             )
             task_id = str(current_result.get("provider_task_id") or "")
             try:
-                if task_id and job["status"] == "running":
-                    polled = poll_video_generation(
+                if not video_claimed:
+                    if not claim_job(db, job_id, allowed_statuses=("waiting_configuration", "queued")):
+                        raise HTTPException(409, "任务已由另一个请求提交，请刷新任务状态")
+                    video_claimed = True
+                if get_job(db, job_id).get("cancel_requested"):
+                    return update_job(db, job_id, status="cancelled", stage="任务已取消")
+                from contextlib import nullcontext
+                usage = provider_usage(db, avatar_id, str(video_connection["id"]), video_model, "video", metadata={"job_id": job_id}, expected_epoch=job_epoch) if routed_video_legacy else nullcontext(None)
+                with usage as usage_id:
+                    started = start_video_generation(
                         settings_payload,
-                        provider=str(current_result.get("provider") or job.get("provider") or settings_payload.provider),
-                        task_id=task_id,
-                        polling_url=str(current_result.get("polling_url") or ""),
+                        prompt=prompt,
+                        first_frame=first_frame,
+                        metadata={"asset_role": current_result.get("asset_role", "video_generation"), "avatar_id": avatar_id},
                     )
-                    if not polled.get("done"):
-                        return update_job(db, job_id, progress=45, stage=f"视频仍在生成：{polled.get('status', 'PENDING')}", result={**current_result, "last_poll": polled})
-                    filename = f"{int(time.time())}-{uuid.uuid4().hex[:8]}.mp4"
-                    target = selected.avatars_dir / avatar_id / "generated" / "video" / filename
-                    media_type = download_video_result(
-                        str(polled["remote_url"]),
-                        target,
-                        api_key=settings_payload.openrouter_api_key if polled.get("requires_auth") else "",
-                    )
-                    result = {
-                        **current_result,
-                        "asset_url": f"/api/avatars/{avatar_id}/generated/video/{filename}",
-                        "remote_url": polled["remote_url"],
-                        "media_type": media_type,
-                        "provider_task_id": task_id,
-                        "provider": current_result.get("provider") or job.get("provider") or settings_payload.provider,
-                    }
-                    review = finalize_video_continuity(
-                        db,
-                        selected,
-                        avatar_id=avatar_id,
-                        job_id=job_id,
-                        run_id=continuity_run_id,
-                        video_path=target,
-                    )
-                    result["continuity_review"] = review
-                    if not review["sendable"] and review.get("visual_review", {}).get("available") and int(job.get("attempt") or 0) < 1:
-                        retry = start_video_generation(
-                            settings_payload,
-                            prompt=f"{prompt}\n上一次视频连续性检查未通过。减少镜头运动，保持人物、服装、物品和场景结构完全稳定。",
-                            first_frame=first_frame,
-                            metadata={"avatar_id": avatar_id, "auto_retry": True},
-                        )
-                        db.execute("UPDATE training_jobs SET attempt=attempt+1 WHERE id=?", (job_id,))
-                        update_continuity_run(db, continuity_run_id, status="resubmitted", provider=str(retry["provider"]), provider_task_id=str(retry["task_id"]))
-                        return update_job(db, job_id, status="running", progress=40, stage="首版未通过，已自动提交一次稳定性重试", result={**result, "provider_task_id": retry["task_id"], "polling_url": retry.get("polling_url", ""), "previous_candidate_url": result["asset_url"], "auto_retry": True})
-                    return update_job(db, job_id, status="completed" if review["sendable"] else "needs_review", progress=100, stage="异步视频已生成并通过连续性验收" if review["sendable"] else "视频已生成，等待人工复核", result=result, error="")
-                if not claim_job(db, job_id, allowed_statuses=("waiting_configuration", "queued", "failed")):
-                    raise HTTPException(409, "任务已由另一个请求提交，请刷新任务状态")
-                started = start_video_generation(
-                    settings_payload,
-                    prompt=prompt,
-                    first_frame=first_frame,
-                    metadata={"asset_role": current_result.get("asset_role", "video_generation"), "avatar_id": avatar_id},
-                )
                 result = {
                     **current_result,
                     "prompt": prompt,
                     "provider": started["provider"],
+                    "connection_id": str(video_connection["id"]) if routed_video_legacy else "",
+                    "connection_snapshot": video_connection_snapshot(video_connection, video_model, video_route_config) if routed_video_legacy else {},
+                    "usage_event_id": usage_id,
                     "model": started["model"],
                     "provider_task_id": started["task_id"],
                     "polling_url": started.get("polling_url", ""),
@@ -549,21 +549,15 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
                     "video_metadata": started.get("metadata", {}),
                     "reference_audit": [{key: item.get(key) for key in ("set_type", "role", "visual_asset_id", "content_bytes")} for item in reference_inputs],
                 }
-                update_continuity_run(db, continuity_run_id, status="submitted", provider=str(started["provider"]), provider_task_id=str(started["task_id"]))
-                return update_job(
-                    db,
-                    job_id,
-                    status="running",
-                    progress=35,
-                    stage=f"异步视频任务已提交：{started['provider']} · {started.get('status', 'PENDING')}",
-                    result=result,
-                )
-            except VideoGenerationError as exc:
+                return _save_video_submission(db, job, result, continuity_run_id, str(started["provider"]), f"异步视频任务已提交：{started['provider']}")
+            except (VideoGenerationError, ProviderError, OSError) as exc:
+                if db.notification_epoch() != job_epoch:
+                    raise HTTPException(409, "数据库已恢复，旧任务结果已丢弃") from exc
                 update_job(db, job_id, status="failed", stage="异步视频任务失败", error=str(exc))
                 raise HTTPException(502, str(exc)) from exc
         capability = "voice_clone" if job["job_type"] == "voice" else "image"
         candidates = route_candidates(db, capability, avatar_id)
-        if capability == "voice_clone" and not candidates and find_route(db, capability, avatar_id):
+        if not candidates and find_route(db, capability, avatar_id):
             raise HTTPException(400, "声音复刻路由不可用：请检查授权、启用状态和预算，不会改用旧连接")
         if capability == "voice_clone" and candidates:
             priced_candidates, pricing_errors = [], []
@@ -576,6 +570,8 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
             if not priced_candidates:
                 raise HTTPException(400, "；".join(pricing_errors))
             candidates = priced_candidates
+        if not claim_job(db, job_id, allowed_statuses=("waiting_configuration", "queued")):
+            raise HTTPException(409, "任务正在执行或已取消，请刷新状态")
         routed_aliyun = None
         if candidates:
             errors = []
@@ -598,12 +594,13 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
                             raise MiniMaxError("没有可用的声音样本")
                         sample = selected.data_dir / str(item["stored_path"])
                         voice_id = f"oa_{avatar_id[:8]}_{uuid.uuid4().hex[:6]}"[:32]
-                        result = minimax.clone_voice(sample, voice_id=voice_id, model=model or "speech-2.8-hd", config=route_config)
-                        db.execute("UPDATE provider_assets SET active=0 WHERE avatar_id=? AND kind='voice'", (avatar_id,))
-                        db.execute(
-                            "INSERT INTO provider_assets(avatar_id,kind,provider,external_id,source_import_id,metadata_json,created_at) VALUES(?,?,?,?,?,?,?)",
-                            (avatar_id, "voice", connection_id, result["voice_id"], item["id"], json.dumps(result, ensure_ascii=False), int(time.time())),
-                        )
+                        if get_job(db, job_id).get("cancel_requested"):
+                            return update_job(db, job_id, status="cancelled", stage="任务已取消")
+                        with provider_usage(db, avatar_id, connection_id, model, capability, metadata={"job_id": job_id}, expected_epoch=job_epoch):
+                            result = minimax.clone_voice(sample, voice_id=voice_id, model=model or "speech-2.8-hd", config=route_config)
+                        if get_job(db, job_id).get("cancel_requested"):
+                            return update_job(db, job_id, status="cancelled", stage="已停止本地处理；复刻结果未启用，远端可能已计费", result=result)
+
                         stage = "MiniMax 声音复刻档案已创建"
                     else:
                         paths = _job_reference_paths(db, selected, avatar_id, job)
@@ -614,10 +611,15 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
                             mime = mimetypes.guess_type(path.name)[0] or "image/jpeg"
                             references.append(f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}")
                         visual_prompt = str((job.get("result") or {}).get("prompt") or f"保持{avatar['name']}的面部身份特征，生成一张自然、真实的日常人物照片。")
-                        generated = minimax.generate_image(
-                            visual_prompt,
-                            model=model or "image-01", reference_urls=references, config=route_config,
-                        )
+                        if get_job(db, job_id).get("cancel_requested"):
+                            return update_job(db, job_id, status="cancelled", stage="任务已取消")
+                        with provider_usage(db, avatar_id, connection_id, model, capability, metadata={"job_id": job_id}, expected_epoch=job_epoch):
+                            generated = minimax.generate_image(
+                                visual_prompt,
+                                model=model or "image-01", reference_urls=references, config=route_config,
+                            )
+                        if get_job(db, job_id).get("cancel_requested"):
+                            return update_job(db, job_id, status="cancelled", stage="已停止本地处理；图片未启用，远端可能已计费", result=generated)
                         if not generated["urls"]:
                             raise MiniMaxError("图片接口没有返回可下载的图片")
                         filename = f"{int(time.time())}-{uuid.uuid4().hex[:8]}.png"
@@ -635,61 +637,66 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
                                 scene_profile_id=str((job.get("result") or {}).get("scene_profile_id") or ""),
                             )
                             result.update(linked)
-                        db.execute("UPDATE provider_assets SET active=0 WHERE avatar_id=? AND kind='visual'", (avatar_id,))
-                        db.execute(
-                            "INSERT INTO provider_assets(avatar_id,kind,provider,metadata_json,created_at) VALUES(?,?,?,?,?)",
-                            (avatar_id, "visual", connection_id, json.dumps(result, ensure_ascii=False), int(time.time())),
-                        )
+
                         stage = "MiniMax 人物参考图生成已完成"
-                    record_provider_usage(db, avatar_id, connection_id, model, capability, "ok", latency_ms=(time.perf_counter() - started_at) * 1000, estimated_cost=estimate_provider_cost(connection, capability))
-                    return update_job(db, job_id, status="completed", progress=100, stage=stage, result=result)
-                except (MiniMaxError, AliyunError, OSError) as exc:
+                    return _complete_generated_asset(db, job, result, stage, connection_id, source_import_id=item["id"] if job["job_type"] == "voice" else None)
+                except (MiniMaxError, AliyunError, ProviderError, OSError) as exc:
+                    if db.notification_epoch() != job_epoch:
+                        raise HTTPException(409, "数据库已恢复，旧任务结果已丢弃") from exc
                     errors.append(f"{connection['display_name']}：{exc}")
-                    record_provider_usage(db, avatar_id, connection_id, model, capability, "failed", latency_ms=(time.perf_counter() - started_at) * 1000, metadata={"error": str(exc)[:500]})
             if not routed_aliyun:
                 update_job(db, job_id, status="failed", stage="能力路由中的云端任务失败", error="；".join(errors))
                 raise HTTPException(502, "；".join(errors) or "没有可用的服务连接")
         if routed_aliyun:
             aliyun_connection, aliyun_model, _aliyun_route_config = routed_aliyun
-            client = AliyunAvatarClient(load_provider_key(provider_key_name(str(aliyun_connection["id"]))))
-            if capability == "voice_clone" and aliyun_model:
-                cloud = {**cloud, "voice_clone_model": aliyun_model, "voice_target_model": aliyun_model}
+            client = AliyunAvatarClient(load_provider_key(provider_key_name(str(aliyun_connection["id"]))), base_url=aliyun_native_base_url(str(aliyun_connection["base_url"])))
+            if capability == "voice_clone":
+                cloud = {**cloud, "voice_clone_model": aliyun_model or cloud.get("voice_clone_model", "qwen-voice-enrollment"), "voice_target_model": _aliyun_route_config.get("target_model") or json.loads(aliyun_connection.get("models_json") or "{}").get("tts") or cloud.get("voice_target_model", "qwen3-tts-vc-2026-01-22")}
             if capability == "image" and aliyun_model:
                 cloud = {**cloud, "image_reference_model": aliyun_model}
         else:
             client = AliyunAvatarClient(load_provider_key("aliyun"))
         if not client.available():
+            update_job(db, job_id, status="failed", stage="服务连接未配置凭据", error="尚未配置阿里云百炼 API Key")
             raise HTTPException(400, "尚未配置阿里云百炼 API Key")
         update_job(db, job_id, status="running", progress=10, stage="正在准备经授权的素材")
         try:
+            from contextlib import nullcontext
+            owner = str(aliyun_connection["id"]) if routed_aliyun else "aliyun"
+            def paid_attempt():
+                if get_job(db, job_id).get("cancel_requested"):
+                    raise ProviderError("任务已取消，不再提交")
+                return provider_usage(db, avatar_id, owner, aliyun_model, capability, metadata={"job_id": job_id}, expected_epoch=job_epoch) if routed_aliyun else nullcontext(None)
             if job["job_type"] == "voice":
                 item = db.one("SELECT * FROM imports WHERE avatar_id=? AND category='audio' ORDER BY id DESC LIMIT 1", (avatar_id,))
                 if not item:
                     raise AliyunError("没有可用的声音样本")
                 sample = selected.data_dir / str(item["stored_path"])
                 safe_name = re.sub(r"[^a-z0-9]", "", f"oa{avatar_id}".lower())[:12]
-                result = client.clone_voice(
-                    sample,
-                    preferred_name=f"{safe_name}{uuid.uuid4().hex[:4]}"[:16],
-                    clone_model=str(cloud.get("voice_clone_model", "qwen-voice-enrollment")),
-                    target_model=str(cloud.get("voice_target_model", "qwen3-tts-vc-2026-01-22")),
-                )
-                db.execute("UPDATE provider_assets SET active=0 WHERE avatar_id=? AND kind='voice'", (avatar_id,))
-                db.execute(
-                    "INSERT INTO provider_assets(avatar_id,kind,provider,external_id,source_import_id,metadata_json,created_at) VALUES(?,?,?,?,?,?,?)",
-                    (avatar_id, "voice", "aliyun", result["voice_id"], item["id"], json.dumps(result, ensure_ascii=False), int(time.time())),
-                )
+                with paid_attempt():
+                    result = client.clone_voice(
+                        sample,
+                        preferred_name=f"{safe_name}{uuid.uuid4().hex[:4]}"[:16],
+                        clone_model=str(cloud.get("voice_clone_model", "qwen-voice-enrollment")),
+                        target_model=str(cloud.get("voice_target_model", "qwen3-tts-vc-2026-01-22")),
+                    )
+                if get_job(db, job_id).get("cancel_requested"):
+                    return update_job(db, job_id, status="cancelled", stage="已停止本地处理；生成结果未启用，远端可能已计费", result=result)
+
                 stage = "声音复刻档案已创建"
             else:
                 paths = _job_reference_paths(db, selected, avatar_id, job)
                 if not paths:
                     raise AliyunError("没有可用的参考照片")
                 visual_prompt = str((job.get("result") or {}).get("prompt") or f"保持{avatar['name']}的面部身份特征，生成一张自然、真实的日常人物照片。")
-                result = client.generate_reference_image(
-                    paths,
-                    prompt=visual_prompt,
-                    model=str(cloud.get("image_reference_model", "qwen-image-2.0-pro")),
-                )
+                with paid_attempt():
+                    result = client.generate_reference_image(
+                        paths,
+                        prompt=visual_prompt,
+                        model=str(cloud.get("image_reference_model", "qwen-image-2.0-pro")),
+                    )
+                if get_job(db, job_id).get("cancel_requested"):
+                    return update_job(db, job_id, status="cancelled", stage="已停止本地处理；生成结果未启用，远端可能已计费", result=result)
                 output = result.get("output") if isinstance(result.get("output"), dict) else {}
                 urls = extract_urls(output)
                 if not urls:
@@ -698,11 +705,7 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
                 target = selected.avatars_dir / avatar_id / "generated" / "images" / filename
                 media_type = download_provider_asset(urls[0], target, max_bytes=50 * 1024 * 1024)
                 local_result = {"filename": filename, "media_type": media_type, "reference_count": len(paths)}
-                db.execute("UPDATE provider_assets SET active=0 WHERE avatar_id=? AND kind='visual'", (avatar_id,))
-                db.execute(
-                    "INSERT INTO provider_assets(avatar_id,kind,provider,metadata_json,created_at) VALUES(?,?,?,?,?)",
-                    (avatar_id, "visual", "aliyun", json.dumps(local_result, ensure_ascii=False), int(time.time())),
-                )
+
                 result = {"asset_url": f"/api/avatars/{avatar_id}/generated/images/{filename}", "reference_count": len(paths), "prompt": visual_prompt}
                 if str((job.get("result") or {}).get("asset_role") or "") == "scene_key_image":
                     linked = register_key_image_candidate(
@@ -710,15 +713,17 @@ def create_media_runtime_router(context: ApplicationContext) -> APIRouter:
                         selected,
                         avatar_id=avatar_id,
                         local_path=target,
-                        provider="aliyun",
+                        provider=owner,
                         remote_url=str(urls[0]),
                         scene_profile_id=str((job.get("result") or {}).get("scene_profile_id") or ""),
                     )
                     result.update(linked)
                 stage = "人物参考图生成已完成"
-            return update_job(db, job_id, status="completed", progress=100, stage=stage, result=result)
-        except AliyunError as exc:
-            update_job(db, job_id, status="failed", stage="云端任务失败", error=str(exc))
+            return _complete_generated_asset(db, job, result, stage, owner, source_import_id=item["id"] if job["job_type"] == "voice" else None)
+        except (AliyunError, ProviderError, OSError) as exc:
+            if db.notification_epoch() != job_epoch:
+                raise HTTPException(409, "数据库已恢复，旧任务结果已丢弃") from exc
+            update_job(db, job_id, status="cancelled" if get_job(db, job_id).get("cancel_requested") else "failed", stage="云端任务已停止", error=str(exc))
             raise HTTPException(502, str(exc)) from exc
 
     return router

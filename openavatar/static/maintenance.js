@@ -1,6 +1,9 @@
 async function openMaintenance() {
-  const base = `/api/avatars/${state.currentId}`;
+  const avatarId = state.currentId;
+  const base = `/api/avatars/${avatarId}`;
   const [memories, revisions, world, backups] = await Promise.all([api(`${base}/memories?limit=500`), api(`${base}/memory-revisions`), api(`${base}/world`), api('/api/system/backups')]);
+  if (state.currentId !== avatarId) return;
+  state.maintenanceMemories = {avatarId, items: memories};
   const mergeable = memories.filter(m => !["merged_duplicate", "rejected"].includes(m.kind));
   const options = mergeable.map(m => `<option value="${m.id}">#${m.id} · ${escapeHtml(m.content.slice(0, 80))}</option>`).join("");
   const button = (action, label, attrs = '') => `<button type="button" class="secondary" data-action="maintenance-${action}" ${attrs}>${escapeHtml(label)}</button>`;
@@ -25,7 +28,8 @@ async function handleMaintenance(action, node) {
   const post = (path, payload = {}) => api(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
   if (action === 'open-maintenance') return openMaintenance();
   if (action === 'maintenance-edit-memory') {
-    const rows = await api(`${base}/memories`); const item = rows.find(m => String(m.id) === node.dataset.id);
+    const rows = state.maintenanceMemories?.avatarId === state.currentId ? state.maintenanceMemories.items : [];
+    const item = rows.find(m => String(m.id) === node.dataset.id);
     if (!item) throw new Error(ui('记忆已不存在，请刷新。','Memory no longer exists; refresh.'));
     const content = prompt(ui('修改记忆内容','Edit memory content'),item.content); if (content === null) return;
     await api(`${base}/memories/${item.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,note:'Manual memory edit'})});

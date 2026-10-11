@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from openavatar.services.aliyun import AliyunAvatarClient, AliyunError, download_provider_asset, extract_urls
+from openavatar.services.aliyun import AliyunAvatarClient, AliyunError, download_provider_asset, extract_urls, aliyun_native_base_url
 
 
 OPENROUTER_VIDEOS_URL = "https://openrouter.ai/api/v1/videos"
@@ -62,6 +62,8 @@ class VideoGenerationSettings:
     generate_audio: bool = False
     reference_images: tuple[str, ...] = ()
     last_frame: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    aliyun_base_url: str = "https://dashscope.aliyuncs.com"
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -154,7 +156,7 @@ def start_openrouter_video(settings: VideoGenerationSettings, *, prompt: str, fi
         payload["input_references"] = [{"type": "image_url", "image_url": {"url": value}} for value in references]
     result = _json_request(
         "POST",
-        OPENROUTER_VIDEOS_URL,
+        settings.openrouter_base_url.rstrip("/") + "/videos",
         {"Authorization": f"Bearer {settings.openrouter_api_key}", "Content-Type": "application/json"},
         payload,
     )
@@ -179,7 +181,7 @@ def start_aliyun_video(settings: VideoGenerationSettings, *, prompt: str, first_
     if not first_frame.startswith(("https://", "data:image/")) and not references:
         raise VideoGenerationError("阿里 WAN 视频生成需要首帧或参考图片。")
     try:
-        result = AliyunAvatarClient(settings.aliyun_api_key).start_video(
+        result = AliyunAvatarClient(settings.aliyun_api_key, base_url=aliyun_native_base_url(settings.aliyun_base_url)).start_video(
             first_frame,
             prompt=prompt,
             model=settings.aliyun_model,
@@ -209,9 +211,9 @@ def poll_video_generation(settings: VideoGenerationSettings, *, provider: str, t
     if provider == "openrouter":
         if not settings.openrouter_api_key:
             raise VideoGenerationError("尚未配置 OpenRouter 视频 API Key")
-        url = polling_url or f"{OPENROUTER_VIDEOS_URL}/{urllib.parse.quote(task_id)}"
+        url = polling_url or f"{settings.openrouter_base_url.rstrip('/')}/videos/{urllib.parse.quote(task_id)}"
         parsed = urllib.parse.urlparse(url)
-        if parsed.scheme != "https" or parsed.hostname != "openrouter.ai":
+        if parsed.scheme != "https" or parsed.netloc != urllib.parse.urlparse(settings.openrouter_base_url).netloc:
             raise VideoGenerationError("OpenRouter 返回了不受信任的任务查询地址")
         result = _json_request("GET", url, {"Authorization": f"Bearer {settings.openrouter_api_key}"}, timeout=60)
         status = str(result.get("status") or result.get("state") or "PENDING").lower()
@@ -219,7 +221,7 @@ def poll_video_generation(settings: VideoGenerationSettings, *, provider: str, t
         if not settings.aliyun_api_key:
             raise VideoGenerationError("尚未配置阿里云百炼 API Key")
         try:
-            result = AliyunAvatarClient(settings.aliyun_api_key).poll_task(task_id)
+            result = AliyunAvatarClient(settings.aliyun_api_key, base_url=aliyun_native_base_url(settings.aliyun_base_url)).poll_task(task_id)
         except AliyunError as exc:
             raise VideoGenerationError(str(exc)) from exc
         output = result.get("output") if isinstance(result.get("output"), dict) else {}
@@ -233,7 +235,7 @@ def poll_video_generation(settings: VideoGenerationSettings, *, provider: str, t
         if videos:
             return {"ok": True, "done": True, "status": status.upper(), "remote_url": videos[0], "requires_auth": False, "raw": result}
         if provider == "openrouter":
-            remote_url = f"{OPENROUTER_VIDEOS_URL}/{urllib.parse.quote(task_id)}/content?index=0"
+            remote_url = f"{settings.openrouter_base_url.rstrip('/')}/videos/{urllib.parse.quote(task_id)}/content?index=0"
             return {"ok": True, "done": True, "status": status.upper(), "remote_url": remote_url, "requires_auth": True, "raw": result}
         raise VideoGenerationError("阿里云百炼任务已完成，但没有返回有效视频地址")
     if status in VIDEO_FAILED:
@@ -241,11 +243,11 @@ def poll_video_generation(settings: VideoGenerationSettings, *, provider: str, t
     return {"ok": True, "done": False, "status": status.upper(), "raw": result}
 
 
-def download_video_result(remote_url: str, target: Path, *, api_key: str = "") -> str:
+def download_video_result(remote_url: str, target: Path, *, api_key: str = "", auth_origin: str = "https://openrouter.ai") -> str:
     parsed = urllib.parse.urlparse(remote_url)
     if parsed.scheme != "https":
         raise VideoGenerationError("视频下载地址必须使用 HTTPS")
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key and parsed.hostname == "openrouter.ai" else {}
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key and parsed.netloc == urllib.parse.urlparse(auth_origin).netloc else {}
     request = urllib.request.Request(remote_url, headers=headers)
     target.parent.mkdir(parents=True, exist_ok=True)
     try:

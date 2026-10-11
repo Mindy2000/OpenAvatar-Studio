@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from openavatar.routes._shared import *
 from openavatar.services.minimax import MiniMaxClient, MiniMaxError
-from openavatar.services.provider_hub import provider_key_name, record_provider_usage, route_candidates
+from openavatar.services.provider_hub import provider_key_name, begin_provider_usage, finish_provider_usage, route_candidates
 from openavatar.services.continuity import approve_linked_visual_asset
+from openavatar.services.memory_intelligence import effective_memories
 
 
 def create_identity_router(context: ApplicationContext) -> APIRouter:
@@ -162,9 +163,10 @@ def create_identity_router(context: ApplicationContext) -> APIRouter:
             if str(connection["provider_kind"]) != "minimax":
                 errors.append(f"{connection['display_name']} 的 ASR 适配器尚不可用")
                 continue
-            started = time.perf_counter()
+            started, event, status = time.perf_counter(), None, "interrupted"
             try:
                 config = json.loads(connection.get("config_json") or "{}")
+                event = begin_provider_usage(db, avatar_id, connection_id, model, "asr")
                 result = MiniMaxClient(
                     load_provider_key(provider_key_name(connection_id)), str(connection["base_url"]), endpoints=config.get("endpoints", {})
                 ).transcribe(audio_path, model=model, config=route_config)
@@ -174,11 +176,14 @@ def create_identity_router(context: ApplicationContext) -> APIRouter:
                     "UPDATE voice_transcriptions SET provider=?,model=?,transcript=?,status='needs_review',confidence=?,metadata_json=? WHERE id=?",
                     (connection_id, model, result["text"], 0.8, json.dumps({"file_id": result["file_id"]}, ensure_ascii=False), transcription_id),
                 )
-                record_provider_usage(db, avatar_id, connection_id, model, "asr", "ok", latency_ms=(time.perf_counter() - started) * 1000)
+                status = "ok"
                 return dict(db.one("SELECT * FROM voice_transcriptions WHERE id=?", (transcription_id,)))
-            except (MiniMaxError, OSError) as exc:
+            except (MiniMaxError, ProviderError, OSError) as exc:
+                status = "failed"
                 errors.append(f"{connection['display_name']}：{exc}")
-                record_provider_usage(db, avatar_id, connection_id, model, "asr", "failed", latency_ms=(time.perf_counter() - started) * 1000, metadata={"error": str(exc)[:500]})
+            finally:
+                if event is not None:
+                    finish_provider_usage(db, event, status, latency_ms=(time.perf_counter() - started) * 1000)
         if not errors:
             raise HTTPException(400, "尚未配置 ASR 能力路由")
         raise HTTPException(502, "；".join(errors))
@@ -237,9 +242,8 @@ def create_identity_router(context: ApplicationContext) -> APIRouter:
             stage="正在整理人物表达样本",
         )
         update_job(db, job["id"], progress=20)
-        rows = db.all("SELECT speaker,content FROM memories WHERE avatar_id=? AND is_avatar=1 ORDER BY id LIMIT 100000", (avatar_id,))
-        if not rows:
-            rows = db.all("SELECT speaker,content FROM memories WHERE avatar_id=? ORDER BY id LIMIT 100000", (avatar_id,))
+        eligible = effective_memories(db, avatar_id, limit=100000)
+        rows = ([row for row in eligible if row['is_avatar']] or eligible)[:100000]
         if str(avatar["subject_kind"]) == "fictional":
             answers = db.all(
                 """SELECT b.question_text,b.answer FROM builder_answers b

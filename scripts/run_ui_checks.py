@@ -1,6 +1,7 @@
 """Run browser and real WebSocket checks with disposable data and a local server."""
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import os
@@ -54,6 +55,12 @@ async def check_websocket(base: str) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--only', nargs='+', choices=['i18n', 'chat', 'documents', 'navigation', 'smoke', 'video', 'timeline', 'settings'],
+                        help='Rerun selected checks after a failure; default runs all.')
+    parser.add_argument('--artifacts', type=Path, help='Preserve synthetic browser screenshots in this directory.')
+    args = parser.parse_args()
+    selected = set(args.only or ['i18n', 'chat', 'documents', 'navigation', 'smoke', 'video', 'timeline', 'settings'])
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -61,8 +68,9 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="openavatar-ui-") as temporary:
         folder = Path(temporary)
         env = isolated_environment(folder, base)
-        output = folder / "artifacts"
-        output.mkdir()
+        output = args.artifacts.resolve() if args.artifacts else folder / "artifacts"
+        output.mkdir(parents=True, exist_ok=True)
+        env["OPENAVATAR_SCREENSHOT_DIR"] = str(output)
         log_path = folder / "ui-server.log"
         with log_path.open("w") as log:
             server = subprocess.Popen(
@@ -70,7 +78,7 @@ def main() -> None:
                 cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
             )
             try:
-                deadline = time.monotonic() + 30
+                deadline = time.monotonic() + 120
                 while time.monotonic() < deadline:
                     if server.poll() is not None:
                         raise RuntimeError(f"Server stopped; see {log_path}")
@@ -82,14 +90,19 @@ def main() -> None:
                 else:
                     raise RuntimeError(f"Server not ready; see {log_path}")
                 asyncio.run(check_websocket(base))
-                subprocess.run([sys.executable, "scripts/i18n_ui_checks.py", "--base-url", base], cwd=ROOT, env=env, check=True)
-                subprocess.run([
-                    sys.executable, "scripts/chat_ui_i18n_checks.py", "--base-url", base,
-                    "--output", str(output / "chat-i18n"),
-                ], cwd=ROOT, env=env, check=True)
-                subprocess.run([sys.executable, "scripts/ui_smoke.py", "--base-url", base], cwd=ROOT, env=env, check=True)
-                subprocess.run([sys.executable, "scripts/video_call_ui_checks.py", "--base-url", base], cwd=ROOT, env=env, check=True)
-                subprocess.run([sys.executable, "scripts/timeline_ui_smoke.py"], cwd=ROOT, env=env, check=True)
+                checks = {
+                    'i18n': ['scripts/i18n_ui_checks.py', '--base-url', base],
+                    'chat': ['scripts/chat_ui_i18n_checks.py', '--base-url', base, '--output', str(output / 'chat-i18n')],
+                    'documents': ['scripts/chat_documents_ui_checks.py', '--base-url', base],
+                    'navigation': ['scripts/navigation_ui_checks.py', '--base-url', base],
+                    'smoke': ['scripts/ui_smoke.py', '--base-url', base],
+                    'video': ['scripts/video_call_ui_checks.py', '--base-url', base],
+                    'timeline': ['scripts/timeline_ui_smoke.py'],
+                    'settings': ['scripts/settings_ui_checks.py', '--base-url', base],
+                }
+                for name, command in checks.items():
+                    if name in selected:
+                        subprocess.run([sys.executable, *command], cwd=ROOT, env=env, check=True)
             except Exception:
                 log.flush()
                 print("Local UI server log (last 40 lines):", file=sys.stderr)
@@ -102,7 +115,7 @@ def main() -> None:
                 except subprocess.TimeoutExpired:
                     server.kill()
                     server.wait()
-    print("Browser and WebSocket checks passed; temporary data and artifacts removed.")
+    print("Browser and WebSocket checks passed; temporary data removed." + (f" Screenshots kept in {args.artifacts.resolve()}." if args.artifacts else " Temporary artifacts removed."))
 
 
 if __name__ == "__main__":

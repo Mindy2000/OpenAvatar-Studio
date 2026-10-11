@@ -9,17 +9,20 @@ from openavatar.db import Database
 from openavatar.providers import load_api_key, load_provider_key
 from openavatar.services.model_connections import provider_config
 from openavatar.services.video_generation import VideoGenerationSettings, build_first_frame, select_video_tier
-from openavatar.services.provider_hub import provider_key_name, route_candidates
+from openavatar.services.provider_hub import provider_key_name, route_candidates, find_route
 
 def video_call_settings(db: Database, avatar_id: str = "") -> dict[str, Any]:
     current = db.setting("cloud_services", {})
     routed = route_candidates(db, "realtime_video", avatar_id)
     connection = routed[0][0] if routed and routed[0][0].get("provider_kind") == "north" else None
+    route_configured = bool(find_route(db, "realtime_video", avatar_id))
     return {
+        "connection_id": str(connection["id"]) if connection else "",
+        "route_configured": route_configured,
         "provider": "north",
         "video_call_enabled": bool(current.get("video_call_enabled", True)),
         "north_api_url": str(connection.get("base_url") if connection else current.get("north_api_url", "https://api.atlasv1.com")),
-        "north_api_key": load_provider_key(provider_key_name(str(connection["id"]))) if connection else load_provider_key("north"),
+        "north_api_key": load_provider_key(provider_key_name(str(connection["id"]))) if connection else "" if route_configured else load_provider_key("north"),
         "north_face_url": str(current.get("north_face_url", "")),
         "north_idle_timeout": int(current.get("north_idle_timeout", 300)),
         "north_price_per_second": float(current.get("north_price_per_second", 0.00194)),
@@ -27,7 +30,7 @@ def video_call_settings(db: Database, avatar_id: str = "") -> dict[str, Any]:
         "camera_flip_enabled": bool(current.get("camera_flip_enabled", True)),
         "vision_feedback_enabled": bool(current.get("vision_feedback_enabled", True)),
         "smart_interrupt_enabled": bool(current.get("smart_interrupt_enabled", True)),
-        "cloud_data_consent": bool(connection) or bool(current.get("cloud_data_consent", False)),
+        "cloud_data_consent": bool(connection) or (not route_configured and bool(current.get("cloud_data_consent", False))),
     }
 
 
@@ -68,6 +71,32 @@ def video_generation_settings(db: Database, settings: Settings, avatar_id: str, 
         openrouter_model=str(cloud.get(f"openrouter_video_{tier}_model") or cloud.get("openrouter_video_model") or default_models.get(tier, "google/veo-3.1-fast")),
         tier=tier,
         resolution="1080p" if tier == "final" else "720p",
+    )
+
+
+def video_connection_snapshot(connection: dict, model: str, route_config: dict) -> dict:
+    return {"connection_id": str(connection["id"]), "provider_kind": str(connection["provider_kind"]),
+            "base_url": str(connection["base_url"]), "model": model,
+            "route_config": dict(route_config), "config": {"endpoints": __import__("json").loads(connection.get("config_json") or "{}").get("endpoints", {})}}
+
+
+def bound_video_settings(db: Database, snapshot: dict) -> VideoGenerationSettings:
+    """Recover the submitting account/config without consulting today's routes."""
+    from openavatar.services.video_generation import VideoGenerationError
+    row = db.one("SELECT * FROM provider_connections WHERE id=?", (snapshot["connection_id"],))
+    if not row or any(str(row[key]) != str(snapshot[key]) for key in ("base_url", "provider_kind")):
+        raise VideoGenerationError("原视频连接已删除或地址/类型已改变，无法安全恢复原账号任务")
+    kind, config = snapshot["provider_kind"], snapshot.get("route_config") or {}
+    key = load_provider_key(provider_key_name(str(snapshot["connection_id"])))
+    return VideoGenerationSettings(
+        provider=kind, openrouter_api_key=key if kind == "openrouter" else "",
+        aliyun_api_key=key if kind == "aliyun" else "",
+        openrouter_model=snapshot.get("model") or "google/veo-3.1-fast",
+        aliyun_model=snapshot.get("model") or "wan2.7-i2v-2026-04-25",
+        openrouter_base_url=snapshot["base_url"], aliyun_base_url=snapshot["base_url"],
+        duration=int(config.get("duration", 8)), resolution=str(config.get("resolution", "720p")),
+        aspect_ratio=str(config.get("aspect_ratio", "9:16")), generate_audio=bool(config.get("generate_audio", False)),
+        fallback_provider="",
     )
 
 

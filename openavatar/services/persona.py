@@ -68,7 +68,10 @@ def build_profile(rows: list[dict[str, Any]], avatar_name: str, client: ChatProv
 
 
 def relevant_memories(rows: list[dict[str, Any]], query: str, limit: int = 12) -> list[dict[str, Any]]:
-    tokens = set(re.findall(r"[\w\u4e00-\u9fff]{2,}", query.lower()))
+    tokens = set(re.findall(r"[a-z0-9_]{2,}", query.lower()))
+    for phrase in re.findall(r"[\u4e00-\u9fff]+", query):
+        tokens.update(phrase[index:index + 2] for index in range(len(phrase) - 1))
+    tokens.difference_update({'什么', '哪个', '哪里', '怎么', '记得', '请问', '我的', '你的'})
     scored = []
     for row in rows:
         content = str(row.get("content", ""))

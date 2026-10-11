@@ -77,6 +77,7 @@ class TimelineCandidatePayload(BaseModel):
 class ImportConfirm(BaseModel):
     avatar_speakers: list[str] = Field(default_factory=list, max_length=100)
     excluded_row_ids: list[int] = Field(default_factory=list, max_length=100000)
+    reviewed_row_ids: list[int] | None = Field(default=None, max_length=100000)
     apply_mode: Literal["merge", "replace"] = "merge"
 
 

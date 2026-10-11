@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
 import urllib.request
 import os
 import socket
@@ -207,6 +208,8 @@ def run_tk_window(runtime: DesktopRuntime, server: uvicorn.Server) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # PyInstaller must dispatch PDF extraction workers before parsing app arguments.
+    multiprocessing.freeze_support()
     parser = argparse.ArgumentParser(description="OpenAvatar Studio desktop launcher")
     parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8767")))
     parser.add_argument("--no-browser", action="store_true")

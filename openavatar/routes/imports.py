@@ -172,22 +172,23 @@ def create_imports_router(context: ApplicationContext) -> APIRouter:
         return rows
 
     @router.get("/api/avatars/{avatar_id}/imports/{import_id}/preview")
-    def preview_import(avatar_id: str, import_id: int, limit: int = 300) -> dict[str, Any]:
+    def preview_import(avatar_id: str, import_id: int, limit: int = 300, offset: int = 0) -> dict[str, Any]:
         require_avatar(db, avatar_id)
         item = db.one("SELECT * FROM imports WHERE id=? AND avatar_id=?", (import_id, avatar_id))
         if not item:
             raise HTTPException(404, "导入记录不存在")
         safe_limit = min(max(limit, 1), 2000)
+        safe_offset = max(offset, 0)
         rows = db.all(
-            "SELECT id,row_index,speaker,content,selected,is_avatar FROM import_rows WHERE import_id=? ORDER BY row_index LIMIT ?",
-            (import_id, safe_limit),
+            "SELECT id,row_index,speaker,content,selected,is_avatar FROM import_rows WHERE import_id=? ORDER BY row_index LIMIT ? OFFSET ?",
+            (import_id, safe_limit, safe_offset),
         )
         speakers = db.all(
             "SELECT speaker,COUNT(*) AS count FROM import_rows WHERE import_id=? GROUP BY speaker ORDER BY count DESC",
             (import_id,),
         )
         total = db.one("SELECT COUNT(*) AS count FROM import_rows WHERE import_id=?", (import_id,)) or {"count": 0}
-        return {"import": item, "speakers": speakers, "rows": rows, "total": int(total["count"]), "truncated": int(total["count"]) > safe_limit}
+        return {"import": item, "speakers": speakers, "rows": rows, "total": int(total["count"]), "offset": safe_offset, "limit": safe_limit, "truncated": int(total["count"]) > safe_offset + safe_limit}
 
     @router.put("/api/avatars/{avatar_id}/imports/{import_id}/text")
     def save_image_text(avatar_id: str, import_id: int, payload: ManualImageText) -> dict[str, Any]:
@@ -279,6 +280,10 @@ def create_imports_router(context: ApplicationContext) -> APIRouter:
         if not rows:
             raise HTTPException(400, "没有可以确认的解析内容")
         excluded = set(payload.excluded_row_ids)
+        # Older clients only displayed the first 300 rows. Never accept their hidden tail.
+        reviewed = set(payload.reviewed_row_ids) if payload.reviewed_row_ids is not None else {row['id'] for row in rows[:300]}
+        if reviewed - {row['id'] for row in rows}:
+            raise HTTPException(400, "审核行不属于当前素材，请重新打开预览")
         avatar_speakers = {speaker.strip() for speaker in payload.avatar_speakers}
         known_speakers = {str(row["speaker"]).strip() for row in rows}
         if avatar_speakers and not (avatar_speakers & known_speakers):
@@ -292,7 +297,7 @@ def create_imports_router(context: ApplicationContext) -> APIRouter:
             accepted_lines = []
             avatar_lines = []
             for row in rows:
-                is_selected = int(int(row["id"]) not in excluded)
+                is_selected = int(int(row["id"]) in reviewed and int(row["id"]) not in excluded)
                 is_avatar = int(str(row["speaker"]).strip() in avatar_speakers)
                 connection.execute("UPDATE import_rows SET selected=?,is_avatar=? WHERE id=?", (is_selected, is_avatar, row["id"]))
                 if not is_selected:

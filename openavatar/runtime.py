@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import threading
 import time
 from collections import defaultdict
@@ -141,14 +142,44 @@ class BackgroundSupervisor:
         self._tasks.clear()
         await asyncio.to_thread(self.leases.release_all)
 
+    async def _invoke(self, job: PeriodicJob) -> None:
+        # There is at most one worker per registered job. A synchronous poll,
+        # download or SQLite maintenance must never run on the ASGI event loop.
+        if inspect.iscoroutinefunction(job.callback):
+            result = job.callback()
+        else:
+            result = await asyncio.to_thread(job.callback)
+        if isinstance(result, Awaitable):
+            await result
+
+    async def _renew(self, job: PeriodicJob) -> None:
+        while True:
+            await asyncio.sleep(max(1.0, job.lease_seconds / 3))
+            if not await asyncio.to_thread(self.leases.acquire, job.name, job.lease_seconds):
+                self.metrics.increment(f"background.{job.name}.lease_lost")
+                return
+
+    async def _execute(self, job: PeriodicJob) -> None:
+        work = asyncio.create_task(self._invoke(job))
+        renewal = asyncio.create_task(self._renew(job))
+        try:
+            await asyncio.shield(work)
+        except asyncio.CancelledError:
+            # Cancelling to_thread cannot stop the underlying call. Keep its
+            # lease until it actually finishes, so shutdown cannot hand the same
+            # task to a second process while the first is still writing results.
+            await work
+            raise
+        finally:
+            renewal.cancel()
+            await asyncio.gather(renewal, return_exceptions=True)
+
     async def _run(self, job: PeriodicJob) -> None:
         while not self._stop.is_set():
             try:
                 acquired = await asyncio.to_thread(self.leases.acquire, job.name, job.lease_seconds)
                 if acquired:
-                    result = job.callback()
-                    if isinstance(result, Awaitable):
-                        await result
+                    await self._execute(job)
                     self.metrics.increment(f"background.{job.name}.success")
             except asyncio.CancelledError:
                 raise
@@ -158,4 +189,3 @@ class BackgroundSupervisor:
                 await asyncio.wait_for(self._stop.wait(), timeout=max(0.1, job.interval_seconds))
             except TimeoutError:
                 pass
-

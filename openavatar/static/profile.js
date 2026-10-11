@@ -49,6 +49,7 @@ function renderReadinessBanner() {
   const node = $("#readinessBanner");
   const route = report.route === "fictional" ? ui("虚构设定路线", "Fictional path") : ui("真实素材路线", "Real-material path");
   if (report.can_start_official) {
+    if(state.previewMode){void stopConversationMedia();resetChatComposer();void cancelActiveChat();}
     state.previewMode = false;
     node.innerHTML = `<b>${route} · ${ui("正式可用", "Ready for official use")}</b><span>${ui("必须项已完成。推荐项和高级项可以继续补强。", "Required items are complete. Recommended and advanced items can still improve quality.")}</span>`;
     node.className = "readiness-banner official";
@@ -169,10 +170,15 @@ async function loadEvidence() {
   </article>`).join("");
 }
 
+let messagesLoadGeneration = 0;
+
 async function loadMessages() {
   const avatarId = state.currentId;
-  const rows = await api(`/api/avatars/${avatarId}/messages?timeline_kind=${state.previewMode ? "preview" : "official"}`);
-  if (state.currentId !== avatarId) return;
+  if (!avatarId) return;
+  const preview = !!state.previewMode;
+  const generation = ++messagesLoadGeneration;
+  const rows = await api(`/api/avatars/${avatarId}/messages?timeline_kind=${preview ? "preview" : "official"}`);
+  if (generation !== messagesLoadGeneration || state.currentId !== avatarId || !!state.previewMode !== preview) return;
   const list = $("#messageList");
   const signature = JSON.stringify([avatarId, state.previewMode, state.interfaceLanguage, rows]);
   if (list.dataset.signature === signature && !list.querySelector("[data-stream-text]")) return;

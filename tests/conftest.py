@@ -1,5 +1,7 @@
 """Keep module-level application initialization away from users' runtime data."""
 import os
+import ipaddress
+import socket
 import tempfile
 
 
@@ -9,6 +11,31 @@ os.environ["OPENAVATAR_DATA_DIR"] = _session_data.name
 
 import keyring
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def no_external_network(monkeypatch):
+    """Regression tests may use loopback servers, never a paid provider."""
+    def allowed(sock, address):
+        if sock.family == socket.AF_UNIX:
+            return
+        host = str(address[0])
+        try:
+            local = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            local = host == "localhost"
+        if not local:
+            raise AssertionError(f"External network is disabled in tests: {host}")
+
+    for method in ("connect", "connect_ex", "sendto"):
+        original = getattr(socket.socket, method)
+
+        def guarded(sock, *args, _method=method, _original=original, **kwargs):
+            address = args[-1] if _method == "sendto" else args[0]
+            allowed(sock, address)
+            return _original(sock, *args, **kwargs)
+
+        monkeypatch.setattr(socket.socket, method, guarded)
 
 
 @pytest.fixture(autouse=True)

@@ -1,10 +1,12 @@
 async function loadAvatarModelSettings() {
-  if (!state.currentId) return;
+  const avatarId = state.currentId;
+  if (!avatarId) return;
   const [values, rules] = await Promise.all([
-    api(`/api/avatars/${state.currentId}/settings/model`),
-    api(`/api/avatars/${state.currentId}/proactive-rules`),
+    api(`/api/avatars/${avatarId}/settings/model`),
+    api(`/api/avatars/${avatarId}/proactive-rules`),
   ]);
   await loadModelConnections();
+  if (state.currentId !== avatarId) return;
   $("#avatarModelMode").value = values.connection_id ? "connection" : "inherit";
   fillConnectionSelect($("#avatarConnectionSelect"), values.connection_id || state.selectedConnectionId);
   renderConnectionHint("#avatarConnectionHint", $("#avatarConnectionSelect").value);
@@ -19,6 +21,14 @@ async function loadAvatarModelSettings() {
   $("#proactiveTone").value = rules.tone || "";
   $("#proactiveUseMemory").checked = Boolean(rules.use_long_term_memory);
   $("#proactiveAdvanceWorld").checked = Boolean(rules.allow_world_event_advancement);
+  const runtime = rules.runtime || {};
+  const last = runtime.last_attempt || {};
+  $("#proactiveRuntimeStatus").textContent = runtime.paused
+    ? ui("连续失败已暂停，检查服务后保存设置可恢复。", "Paused after repeated failures. Check the service, then save these settings to resume.")
+    : last.status === "failed"
+      ? ui("上次主动联系失败；将遵守最短间隔和每日尝试次数。", "The last proactive attempt failed; the minimum interval and daily attempt limit still apply.")
+      : "";
+  $("#proactiveRuntimeStatus").hidden = !$("#proactiveRuntimeStatus").textContent;
 }
 
 function parseWindows(text) {
@@ -42,7 +52,10 @@ function formatQuiet(value) {
 }
 
 async function loadTrainingJobs() {
-  const jobs = await api(`/api/avatars/${state.currentId}/training-jobs`);
+  const avatarId = state.currentId;
+  if (!avatarId) return;
+  const jobs = await api(`/api/avatars/${avatarId}/training-jobs`);
+  if (state.currentId !== avatarId) return;
   const done = jobs.filter(job => job.status === "completed").length;
   const active = jobs.filter(job => ["queued", "running"].includes(job.status)).length;
   const waiting = jobs.filter(job => ["waiting_configuration", "needs_review"].includes(job.status)).length;
@@ -55,26 +68,29 @@ async function loadTrainingJobs() {
 }
 
 async function loadBuildPanels() {
+  const avatarId = state.currentId;
+  if (!avatarId) return;
   const [checks, world, proposals, rights, visual, voices, transcripts, routes, devVoices, graph, core, decisions, usage, mediaReviews, videoStatus, assetSets, scenes, continuityRuns] = await Promise.all([
-    api(`/api/avatars/${state.currentId}/checks`),
-    api(`/api/avatars/${state.currentId}/world`),
-    api(`/api/avatars/${state.currentId}/world/proposals`),
-    api(`/api/avatars/${state.currentId}/rights`),
-    api(`/api/avatars/${state.currentId}/visual-assets`),
-    api(`/api/avatars/${state.currentId}/voice-profiles`),
-    api(`/api/avatars/${state.currentId}/voice-transcriptions`),
+    api(`/api/avatars/${avatarId}/checks`),
+    api(`/api/avatars/${avatarId}/world`),
+    api(`/api/avatars/${avatarId}/world/proposals`),
+    api(`/api/avatars/${avatarId}/rights`),
+    api(`/api/avatars/${avatarId}/visual-assets`),
+    api(`/api/avatars/${avatarId}/voice-profiles`),
+    api(`/api/avatars/${avatarId}/voice-transcriptions`),
     api("/api/settings/model-routes"),
     api("/api/voice/development-voices"),
-    api(`/api/avatars/${state.currentId}/memory-graph`),
-    api(`/api/avatars/${state.currentId}/persona-core`),
-    api(`/api/avatars/${state.currentId}/diagnostics/decisions`),
-    api(`/api/avatars/${state.currentId}/diagnostics/usage`),
-    api(`/api/avatars/${state.currentId}/media-reviews`),
-    api(`/api/avatars/${state.currentId}/video-call/status`),
-    api(`/api/avatars/${state.currentId}/visual-asset-sets`),
-    api(`/api/avatars/${state.currentId}/scene-profiles`),
-    api(`/api/avatars/${state.currentId}/continuity/runs`),
+    api(`/api/avatars/${avatarId}/memory-graph`),
+    api(`/api/avatars/${avatarId}/persona-core`),
+    api(`/api/avatars/${avatarId}/diagnostics/decisions`),
+    api(`/api/avatars/${avatarId}/diagnostics/usage`),
+    api(`/api/avatars/${avatarId}/media-reviews`),
+    api(`/api/avatars/${avatarId}/video-call/status`),
+    api(`/api/avatars/${avatarId}/visual-asset-sets`),
+    api(`/api/avatars/${avatarId}/scene-profiles`),
+    api(`/api/avatars/${avatarId}/continuity/runs`),
   ]);
+  if (state.currentId !== avatarId) return;
   const activeVoice = voices.find(item => item.active) || voices[0] || {};
   const canonicalVisual = visual.find(item => item.status === "canonical");
   const approvedVisuals = visual.filter(item => item.status === "approved").length;
@@ -82,7 +98,8 @@ async function loadBuildPanels() {
   const levelNames = { required: tr("必须项"), recommended: tr("推荐项"), advanced: tr("高级项") };
   $("#buildCenterTitle").textContent = checks.route === "fictional" ? tr("虚构数字人的可运行里世界") : tr("真实素材到多模态数字人");
   $("#buildCenterLead").textContent = checks.route === "fictional" ? tr("必须项完成后可正式使用；可选模块决定里世界深度，事件推进默认进入审批。") : tr("真实路线必须先有文本人格素材，再用音频、视觉、长期记忆继续增强。");
-  const jobs = await api(`/api/avatars/${state.currentId}/training-jobs`);
+  const jobs = await api(`/api/avatars/${avatarId}/training-jobs`);
+  if (state.currentId !== avatarId) return;
   renderNextAction(checks, proposals, transcripts, jobs);
   $("#buildPanels").innerHTML = tr`
     <article class="build-panel build-score"><header><span>COMPLETION STANDARD</span><b>${checks.score}</b></header>
@@ -117,12 +134,7 @@ async function loadBuildPanels() {
     <div><b>音频 #${item.source_import_id || item.id}</b><small>${escapeHtml(item.status)} · ${escapeHtml(item.provider)} · ${escapeHtml(item.model)}</small></div>
     ${item.status === "needs_review" ? tr`<textarea rows="3" data-transcription-text="${item.id}" placeholder="填入 ASR 或人工整理后的文本">${escapeHtml(item.transcript || "")}</textarea><div class="inline-actions"><button class="secondary" data-action="run-transcription" data-transcription-id="${item.id}">使用 ASR 自动转写</button><button class="secondary" data-action="confirm-transcription" data-transcription-id="${item.id}">确认转写并作为表达样本</button></div>` : `<p>${escapeHtml(item.transcript)}</p>`}
   </article>`).join("") : tr`<div class="empty-card">还没有声音转写记录。上传音频后会进入这里。</div>`;
-  $("#modelRouteList").innerHTML = routes.map(item => tr`<article class="route-item">
-    <div><b>${escapeHtml(item.role)}</b><small>${escapeHtml(item.latency_class)} · ${escapeHtml(item.cost_class)}</small></div>
-    <label>Provider<input data-route-field="provider" data-route="${escapeHtml(item.role)}" value="${escapeHtml(item.provider)}"></label>
-    <label>模型<input data-route-field="primary_model" data-route="${escapeHtml(item.role)}" value="${escapeHtml(item.primary_model)}"></label>
-    <button class="secondary" data-action="save-model-route" data-route="${escapeHtml(item.role)}">保存</button>
-  </article>`).join("");
+  $("#modelRouteList").innerHTML = `<div class="method-note">${ui("当前运行使用统一服务中心的能力路由。以下旧任务配置仅保留供查看，不参与运行，也不能在此编辑。", "Current operations use capability routes in the unified service hub. The legacy task configuration below is retained for reference only and cannot be edited here.")}</div><details><summary>${ui("查看旧任务配置", "View legacy task configuration")}</summary>${routes.map(item => `<article class="route-item"><b>${escapeHtml(item.role)}</b><p>${escapeHtml(item.provider)} · ${escapeHtml(item.primary_model)}</p></article>`).join("")}</details>`;
   $("#memoryGraphList").innerHTML = graph.nodes?.length ? graph.nodes.slice(0, 14).map(item => tr`<article class="approval-item">
     <div><b>${escapeHtml(item.label)}</b><small>${escapeHtml(item.node_type)} · ${(Number(item.weight) || 0).toFixed(2)} · ${item.evidence_count} 条证据</small></div>
   </article>`).join("") : tr`<div class="empty-card">还没有记忆图谱。确认聊天记录或运行统一 Builder 后会生成。</div>`;
@@ -216,31 +228,77 @@ function voiceCloneFlowPanel(checks, voices, transcripts, jobs) {
   </article>`;
 }
 
+const settingsLoads = new Map();
+
+async function loadSettingsSection(panelId) {
+  if (settingsLoads.has(panelId)) return settingsLoads.get(panelId);
+  const panel = document.getElementById(panelId);
+  let status = panel.querySelector(".settings-load-status");
+  if (!status) {
+    status = document.createElement("div");
+    status.className = "settings-load-status method-note";
+    status.setAttribute("role", "status");
+    panel.prepend(status);
+  }
+  status.textContent = ui("正在读取设置…", "Loading settings…");
+  status.hidden = false;
+  panel.querySelectorAll("input,select,textarea,button").forEach(node => { node.disabled = true; });
+  const task = (async () => {
+    try {
+      if (panelId === "providerHubPanel") await loadProviderHub();
+      if (panelId === "modelSettingsPanel") {
+        await loadModelConnections();
+        if (!$("#settingsDialog").dataset.editConnectionId) fillConnectionEditor();
+      }
+      if (panelId === "ocrSettingsPanel") await loadOcrConnections();
+      if (panelId === "mediaSettingsPanel") {
+        const cloud = await api("/api/settings/cloud-services");
+        $("#dialogAliyunKey").value = "";
+        $("#dialogVoiceCloneModel").value = cloud.voice_clone_model;
+        $("#dialogVoiceTargetModel").value = cloud.voice_target_model;
+        $("#dialogImageModel").value = cloud.image_reference_model;
+        $("#dialogNorthKey").value = "";
+        $("#dialogNorthApiUrl").value = cloud.north_api_url || "https://api.atlasv1.com";
+        $("#dialogNorthFaceUrl").value = cloud.north_face_url || "";
+        $("#dialogNorthIdleTimeout").value = cloud.north_idle_timeout || 300;
+        $("#dialogNorthPrice").value = cloud.north_price_per_second || 0.00194;
+        $("#dialogVideoCallEnabled").checked = cloud.video_call_enabled !== false;
+        $("#dialogVideoScene").checked = cloud.scene_background_enabled !== false;
+        $("#dialogVideoFlip").checked = cloud.camera_flip_enabled !== false;
+        $("#dialogVideoVision").checked = cloud.vision_feedback_enabled !== false;
+        $("#dialogVideoInterrupt").checked = cloud.smart_interrupt_enabled !== false;
+        $("#dialogMediaConsent").checked = cloud.cloud_data_consent;
+      }
+      panel.querySelectorAll("input,select,textarea,button").forEach(node => { node.disabled = false; });
+      status.textContent = "";
+      status.hidden = true;
+    } catch (error) {
+      status.textContent = ui("这一部分暂时无法读取，其他设置仍可使用：", "This section could not load; other settings remain available: ") + systemText(error.message);
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "secondary";
+      retry.textContent = ui("重新读取", "Retry loading");
+      retry.addEventListener("click", () => { void loadSettingsSection(panelId); });
+      status.append(retry);
+    } finally {
+      settingsLoads.delete(panelId);
+    }
+  })();
+  settingsLoads.set(panelId, task);
+  return task;
+}
+
 async function openSettings() {
   closeAuxiliaryDialogs();
-  const cloud = await api("/api/settings/cloud-services");
-  await loadModelConnections();
-  await loadOcrConnections();
-  await loadProviderHub();
   setSettingsTab("providerHubPanel");
-  if (!$("#settingsDialog").dataset.editConnectionId) fillConnectionEditor();
-  $("#dialogAliyunKey").value = "";
-  $("#dialogVoiceCloneModel").value = cloud.voice_clone_model;
-  $("#dialogVoiceTargetModel").value = cloud.voice_target_model;
-  $("#dialogImageModel").value = cloud.image_reference_model;
-  $("#dialogNorthKey").value = "";
-  $("#dialogNorthApiUrl").value = cloud.north_api_url || "https://api.atlasv1.com";
-  $("#dialogNorthFaceUrl").value = cloud.north_face_url || "";
-  $("#dialogNorthIdleTimeout").value = cloud.north_idle_timeout || 300;
-  $("#dialogNorthPrice").value = cloud.north_price_per_second || 0.00194;
-  $("#dialogVideoCallEnabled").checked = cloud.video_call_enabled !== false;
-  $("#dialogVideoScene").checked = cloud.scene_background_enabled !== false;
-  $("#dialogVideoFlip").checked = cloud.camera_flip_enabled !== false;
-  $("#dialogVideoVision").checked = cloud.vision_feedback_enabled !== false;
-  $("#dialogVideoInterrupt").checked = cloud.smart_interrupt_enabled !== false;
-  $("#dialogMediaConsent").checked = cloud.cloud_data_consent;
-  $("#settingsDialog").showModal();
+  const dialog = $("#settingsDialog");
+  if (!dialog.open) dialog.showModal();
+  await Promise.allSettled(["providerHubPanel", "modelSettingsPanel", "ocrSettingsPanel", "mediaSettingsPanel"].map(loadSettingsSection));
 }
+
+// Enter in a configuration field is not an implicit close/save action.
+$("#settingsDialog form").addEventListener("submit", event => event.preventDefault());
+$("#settingsDialog .dialog-close").addEventListener("click", () => $("#settingsDialog").close());
 
 const providerCapabilityLabels = { chat: "对话", vision: "视觉理解", asr: "语音转写", tts: "语音合成", voice_clone: "声音复刻", image: "图片生成", video: "视频生成", realtime_video: "实时视频" };
 const providerConsentLabels = { text: "文字", audio: "音频", voice_biometric: "声音生物特征", image: "图片", video: "视频/实时轨道" };
@@ -473,18 +531,22 @@ function updateConnectionEditorHints() {
 }
 
 async function saveModelConnection(resultNode) {
-  const id = $("#settingsDialog").dataset.editConnectionId || "";
-  const result = await api(id ? `/api/model-connections/${encodeURIComponent(id)}` : "/api/model-connections", {
-    method: id ? "PUT" : "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(connectionPayload()),
-  });
-  $("#connectionApiKey").value = "";
-  $("#settingsDialog").dataset.editConnectionId = result.id;
-  resultNode.textContent = tr`连接已保存：${result.display_name}`;
-  await loadHealth();
-  await loadModelConnections();
-  return result;
+  const controls = $$('[data-action="save-model-connection"], [data-action="test-model-connection"]');
+  controls.forEach(button => { button.disabled = true; });
+  try {
+    const id = $("#settingsDialog").dataset.editConnectionId || "";
+    const result = await api(id ? `/api/model-connections/${encodeURIComponent(id)}` : "/api/model-connections", {
+      method: id ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(connectionPayload()),
+    });
+    $("#connectionApiKey").value = "";
+    $("#settingsDialog").dataset.editConnectionId = result.id;
+    resultNode.textContent = tr`连接已保存：${result.display_name}`;
+    await loadHealth();
+    await loadModelConnections();
+    return result;
+  } finally { controls.forEach(button => { button.disabled = false; }); }
 }
 
 async function saveCurrentAvatarModelSettings(payload, resultNode) {

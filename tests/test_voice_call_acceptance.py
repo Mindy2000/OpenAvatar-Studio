@@ -34,6 +34,7 @@ def test_voice_text_gateway_enforces_80_chars_and_echoes_turn_id(tmp_path, monke
         assert len(saved) == 2
         # Simulate the previous release, then verify upgrade preserves content.
         db.execute("UPDATE messages SET channel='chat' WHERE avatar_id=? AND channel='voice_call'", (avatar,))
+        db.execute("UPDATE schema_meta SET value='8' WHERE key='schema_version'")
         db.initialize()
         assert len(client.get(f'/api/avatars/{avatar}/messages').json()) == 1
         assert len(db.all("SELECT * FROM messages WHERE avatar_id=? AND channel='voice_call'", (avatar,))) == 2

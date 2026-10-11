@@ -4,6 +4,8 @@
 
 This guide describes release candidate 0.1.0. Fresh installations have no preloaded avatars. Supply your own provider accounts, models, and weights. Imports, editing, and preliminary offline persona analysis work without a model connection.
 
+First-run setup, call limits and segmented speech, document questions, and chat memory controls are unreleased source upgrades; see the [changelog](../CHANGELOG.md). The instructions and boundaries below do not establish live paid-service acceptance for those upgrades.
+
 ## Installation and startup
 
 When a chat capability route is configured in the provider hub, the creation wizard uses it directly without requiring a legacy model connection. Build readiness also checks the route's consent, enabled state, credentials, and budget.
@@ -37,11 +39,12 @@ The desktop launcher starts a local service and opens your browser; it is not an
 
 ## First use
 
-1. Read the onboarding guide and choose real materials or fictional settings.
-2. Set identity, language, world region, and authorization.
-3. Open Global AI Settings and start with the service/capability routing section.
-4. Review Ability Status and Diagnostics for configuration and data destinations.
-5. Follow required items and next-action suggestions in the avatar Build Center.
+1. On an empty database without existing configuration, first launch shows three steps: configure Chat → optionally add Voice/Images → complete an avatar and chat.
+2. Configure opens the existing service hub. After saving a connection, choose its service and model for the capability. Closing settings returns to the guide; you can also refresh its status manually.
+3. Voice and images are optional. Avatar creation still collects identity, language, region, and material rights; the guide does not fill in or bypass consent.
+4. Complete required items in Build Center before chatting. Existing users are not forced into the guide. Dismissal is saved, and the top-bar entry reopens it.
+
+The guide checks saved routes, enabled state, models, consent, credential presence, and estimated budgets locally. It does not probe cloud services or call a model. Locally configured does not verify provider balance, model access, or an actual reply; use Ability Status and Diagnostics for further troubleshooting.
 
 UI language and avatar output language are separate. Avatars support Chinese, English, mixed, and custom language choices. Regions include Mainland China, North America, Japan, Europe, and Custom. Region rules influence world runtime; they do not imply live weather or news access.
 
@@ -57,13 +60,13 @@ Local services accept only `127.0.0.1`, `localhost`, or `::1`, for example `http
 
 Legacy connections retain support for cloud/local OpenAI-compatible APIs, Ollama, and local adapters. They use connection-test status; new capability routes do not uniformly enforce a successful test within seven days. Some media-only connection tests make no actual generation request. A successful test does not prove end-to-end media capability.
 
-Budgets use estimated usage. Some MiniMax capabilities have defaults; other providers may record zero without custom `cost_estimates`. These budgets do not replace provider account spending limits. Consult your provider for actual billing and model availability.
+Unified routes reserve daily/monthly estimates before dispatch. Failed or interrupted attempts retain reservations with unknown settlement. A configured budget without a reliable estimate for that capability blocks calls; an unbudgeted unknown price is not free. Provider billing and model availability remain authoritative. Legacy paths and independent OCR do not necessarily share this budget mechanism. Inactive legacy task-model routes are no longer editable; configure capability routes in the service hub.
 
 ## Real-material path
 
 Create only yourself or an explicitly authorized person. Persona building needs text or chat material; audio alone cannot establish a persona. Audio supports the voice workflow, while images become visual candidates.
 
-Chat imports accept TXT, Markdown, JSON, JSONL, CSV, and TSV. Text can use `Name: content`; common structured fields include `speaker`, `role`, `sender`, `name`, and `content`, `text`, `message`. Review speakers, exclude unwanted rows, then confirm them into evidence and memory.
+Chat imports accept TXT, Markdown, JSON, JSONL, CSV, and TSV. Text can use `Name: content`; common structured fields include `speaker`, `role`, `sender`, `name`, and `content`, `text`, `message`. Review speakers and exclude unwanted rows; Previous/Next pages preserve selections. Confirmation imports only reviewed, checked rows. Unviewed rows do not automatically become evidence or memory.
 
 PNG, JPEG, WebP, and HEIC can be stored. Metadata removal is best effort; do not assume every format has lost its EXIF/GPS data. Add text manually when OCR is unavailable. A selected cloud OCR connection is invoked during upload without another per-image confirmation; check OCR settings before uploading sensitive images.
 
@@ -83,11 +86,11 @@ The template's `visual_identity.status: draft` denotes a character-setting draft
 
 Readiness has required, recommended, and advanced levels. Missing required items keep an avatar in preview mode. Other levels improve voice, visuals, memory, and evaluation. Offline analysis and reference-image identity preservation are not model fine-tuning.
 
-Edit persona, boundaries, facts, and feedback rules in the studio. World runtime supports clocks, events, resources, snapshots, approval, rollback, and conflict checks. High-impact changes should be reviewed.
+Edit persona, boundaries, facts, and feedback rules in the studio. World runtime supports clocks, events, resources, snapshots, approval, rollback, and conflict checks. High-impact changes should be reviewed. A different value for an already-pending fact requires approving or rejecting the earlier proposal first. Rollback retires subsequent runtime events, and advancing again reapplies their effects. Later chats read current persona and world settings.
 
 Text chat supports streaming and cancellation. Imported history remains separate from runtime conversations. Historical corrections overlay original records; runtime chat supports search, editing, archiving, and restoration. Editing/deleting freezes subsequent related conversations and attributable shared changes; restoration swaps timelines. Purging archived branches creates a database backup first. Preview and official timelines are distinct.
 
-Proactive contact is off by default and only writes to the local conversation timeline while the service is running. Configure limits, hours, cooldown, and topics. It does not send SMS, email, or external-platform messages. Cloud models can incur usage charges.
+Proactive contact is off by default and only writes to the local conversation timeline while the service is running. Configure limits, hours, cooldown, and topics. It does not send SMS, email, or external-platform messages. Cloud models can incur usage charges. Enablement and rules save together. Failed attempts count toward intervals and rolling 24-hour limits; three consecutive failures pause contact. Check the connection and save settings to resume without clearing consumed attempts. Disabling or changing rules discards stale pending greetings.
 
 ## Voice, visuals, and video
 
@@ -95,11 +98,11 @@ To use speech without cloning, select a MiniMax preset voice in the build center
 
 Cloned speech playback needs a working provider and an activated asset. Transcripts can be provided by ASR or manually. The realtime WebSocket gateway supports text-driven streaming and interruptions. Binary audio input currently reports that realtime ASR is not configured; file transcription is not live microphone recognition.
 
-Reference images become candidates and require approval before serving as approved/canonical identities. Organize people, clothing, objects, and scenes into continuity sets. Generated media uses applicable reference contracts; completed videos are downloaded, sampled into keyframes, and reviewed. Keyframe extraction requires FFmpeg. Without an available reviewer, manual acceptance is required.
+Reference images become candidates and require approval before serving as approved/canonical identities. Organize people, clothing, objects, and scenes into continuity sets. Generated media uses applicable reference contracts; completed videos are downloaded, sampled into keyframes, and reviewed. A job cannot be submitted twice concurrently. Cancelling submitted work may still incur provider charges, but late results are not activated. Failed review requires manual action rather than automatic paid regeneration; missing review frames cannot count as a pass. Keyframe extraction requires FFmpeg. Without an available reviewer, manual acceptance is required.
 
 Async video can use MiniMax, OpenRouter, or Aliyun WAN. First/multiple/last reference frames and audio depend on the selected provider/model; OpenRouter is not a fixed primary route for every task.
 
-Realtime video uses North/Atlas. Configure a key and a canonical/approved image or HTTPS Face URL, then confirm the call. The browser loads LiveKit from a CDN, joins a remote room, and can publish cloned TTS audio to drive lip sync. Hangup requests session release; if the network fails, check remote session state and billing with the provider.
+Realtime video uses North/Atlas. Configure a key and a canonical/approved image or HTTPS Face URL, then confirm the call. The browser loads LiveKit from a CDN, joins a remote room, and can publish cloned TTS audio to drive lip sync. Hangup or leaving the page stops local cameras/microphones first, then requests remote release. Late session creation triggers a compensating release. Failed release can be retried; check remote state and billing with the provider.
 
 The video-call microphone input button uses browser speech recognition, independently of your configured voice API key. It asks for confirmation before starting because the browser may use an online recognition service. Review the transcript before sending; if unsupported or unwanted, type instead. This is separate from the unfinished binary-audio ASR path in the application WebSocket gateway.
 
@@ -107,7 +110,9 @@ The video-call microphone input button uses browser speech recognition, independ
 
 Exports use v3; imports accept v1/v2/v3. The UI separately controls conversations, audio, images, video, and call history. Inspect locally and confirm material rights before importing. Credential fields are not transferred; provider-bound assets may require rebinding. Packages are not full database backups and do not preserve every timeline branch. See the [protocol](OPENAVATAR_PACKAGE_EN.md).
 
-Deleting an avatar removes current records and its asset directory, not previous exports, database backups, other data directories, or provider copies. Database restore requires `RESTORE OPENAVATAR DATABASE` and makes a safety backup first. Treat packages and backups as sensitive files.
+Deleting an avatar removes current records and its asset directory, not previous exports, database backups, other data directories, or provider copies. Database restore requires `RESTORE OPENAVATAR DATABASE`. It checks OpenAvatar structure and validates/migrates a temporary copy before replacement; invalid backups leave current data intact. The pre-restore safety copy appears in the same list and can be restored to undo the operation. Schema v9 upgrades also create a backup. Current source rejects databases above its supported version; do not open an upgraded database with an older application that lacks this protection. Treat packages and backups as sensitive files.
+
+Ordinary reply playback permits one pending synthesis request/player, preventing overlapping clicks. This is not a permanent speech cache; a separate confirmed replay may synthesize and incur cost again.
 
 ## Troubleshooting
 
@@ -129,22 +134,67 @@ Settings & Export → Data maintenance provides memory editing and approval, wor
 
 The + panel offers images/video, camera, calls, files, manual locations, and favorites. Calls branch into voice and video. Hold to record, release to send, or slide upward to cancel; recordings shorter than 0.5 seconds are discarded and the maximum is 60 seconds. Without recognized text, only the recording is saved. Voice-note replies are capped at 80 characters. Camera preview and capture are mirrored by default, with an option to disable mirroring.
 
-Chat image understanding is separate from imported-image OCR. With an authorized vision route, sending a photo requests an image-based reply; older photos have an explicit action. Successful results are cached and failures require manual retry. Files and videos are stored for display, not automatically interpreted. Chat attachments do not automatically become persona-building materials.
+Chat image understanding is separate from imported-image OCR. With an authorized vision route, sending a photo requests an image-based reply; older photos have an explicit action. Results are cached only while their source and complete reply are unchanged, active and on the valid timeline. Editing, rollback or deactivation clears stale caches; failures require manual retry. File uploads are stored for display; supported text files require an explicit Read this file action before questions. Videos are not automatically interpreted. Chat attachments do not automatically become persona-building materials.
 
-Start a browser voice call from + → Calls → Voice. The microphone starts after Start call; limits are three turns and ten minutes. Mute, direct interruption, manual interruption, minimize, and hangup are supported. Browser recognition sends text to the call gateway; model replies use the selected TTS voice. A separate local microphone-level monitor stops playback early. Headphones are recommended; speaker echo, noise, and other devices need separate checks. Hiding the page or switching avatars ends the call.
+Start a browser voice call from + → Calls → Voice. Before starting, set its duration (1–120 minutes, default 10) and estimated CNY allowance (0.01–1,000, default 5). The microphone starts after Start call. The new flow no longer has a fixed three-turn limit: it warns near limits and ends at the deadline or when the remaining allowance cannot cover the next request. The allowance covers chat and speech synthesis estimates, not a hard cap on provider bills. Unknown cloud prices require an explicit valid estimate. Failed or interrupted requests may still be billed, so their estimated reservations are not refunded.
+
+Before starting, local checks verify that voice is enabled, the voice matches its connection, consent and a saved key exist, and estimates/budgets are valid; they make no cloud test request. Before each model reply, a conservative feasibility check covers chat plus up to three speech segments. Estimates are reserved separately only as requests start, avoiding double reservation. The selected voice connection's enabled state, consent, and budget are rechecked during the call without automatically changing its voice or connection.
+
+Replies remain limited to 80 characters and use the configured chat model and selected voice. Completed sentences can begin synthesis/playback early, with at most three speech segments per reply. This may mean up to three TTS requests and different totals for providers charging per request; faster playback is not guaranteed under every network condition. Segments play in order; interruption cancels old playback and queued segments. Failures do not automatically retry or switch providers.
+
+Mute, speech interruption, manual interruption, minimize, and hangup are supported. Browser recognition sends text to the call gateway. A separate local microphone-level monitor stops playback early; headphones are recommended. Speaker echo, noise, and other devices need their own checks. Switching browser tabs does not end the call. Closing or reloading the page, switching avatars, or leaving the in-app chat page ends it.
 
 The call window has no per-utterance captions. Fixed on 2026-10-05: main chat and history search hide voice_call transcripts while retaining call cards; local transcripts remain available to model context. Disabling call-history export excludes call cards, voice_call messages, sessions/turns, and all reply diagnostics. Legacy synthesized audio cannot distinguish calls from auditions, so all generated/audio files are also omitted. Original recordings and voice-note attachments follow the audio option. This does not delete local data or independently authored persona settings or memories.
 
 Proactive greetings use local time, an 80-character cap, and instructions not to invent weather, location, or activities; these instructions do not guarantee every response. Memory maintenance supports checked merges and revision history. Imported usage events marked imported_history do not count against current connection budgets.
 
 
-Ordinary text and voice-note replies enforce an 80-character limit including punctuation, consistently across streamed output and persistence. The new composer and call UI passed local English, dynamic-label, language round-trip, and user-content preservation checks. Full cloud interruption and continuation, and the combined mirrored-camera, send, and image-understanding flow passed in the current Mac acceptance environment. This does not establish acceptance on other devices, browsers, noisy speaker setups, or every provider.
+Ordinary text and voice-note replies enforce an 80-character limit including punctuation, consistently across streamed output and persistence. The previous version has Mac acceptance evidence for its English interface, full cloud interruption/continuation, and mirrored-camera, send, and image-understanding flow. That evidence does not establish live paid-service acceptance for this round's segmented calls, limits, or document questions, nor acceptance on other devices or every provider.
+
+### Explicit document questions
+
+1. Send a TXT, MD, CSV, or text-layer PDF through + → Files, then click Read this file beside its card.
+2. Enter a question, or leave it blank for a summary. Confirm sending extracted text, the question, and current conversation context to the current chat service, then send.
+3. Review the reply of up to 80 characters and its file-source button. Ask follow-up questions explicitly in the file dialog; ordinary chat does not automatically attach the full document again.
+
+Text files are limited to 2 MB; PDFs to 10 MB and 20 pages; all extracted text to 20,000 characters. Oversized files are rejected and must be split. Only PDF text layers are read: there is no OCR, and images or pages without text are not considered read. Encrypted, damaged, or timed-out PDFs are rejected. Each explicit question makes at most one current-chat-service call, with no automatic retry or provider switch. A successful default summary for the same file can be reused. Files do not automatically become persona settings, memories, or world facts.
+
+Summary caches are reused only while the complete, unchanged question/answer pair remains active on the current timeline. After editing, rollback, or deactivation, explicitly confirm a new summary; the discarded answer is not reused.
+
+### Manage memory beside a message
+
+Click Memory beside a text or transcribed voice message, review/edit the content, then choose Remember this, Correct and remember, or Stop using this. After user confirmation these actions run locally without a model call and retain revision records.
+
+Correction or stopping use excludes the original message and same-turn reply from future context. Stopping use also deactivates linked memories; corrected memory remains available. If the chat note has been merged into another memory, the dialog warns beforehand that changing or stopping the source also deactivates memories containing it. Original chat history stays visible. This does not delete history or independently saved material, or recall requests already sent to providers. Preview and official memories cannot be merged together. Sleep consolidation skips explicitly saved chat notes and their merged derivatives, preserving source-based correction and deactivation.
+
+Editing or rejecting chat-source memories in Data Maintenance also excludes their source context and deactivates merged derivatives. If a pending document question is rolled back, edited, deactivated, or its avatar is deleted, a late reply is not inserted back into chat. Requests already sent may still incur charges.
+
+Restoring an archived timeline does not undo explicit memory corrections or deactivations made after it was archived. Rolling back chat also deactivates merged memories that contain the removed sources. Reapproval in Data Maintenance restores a usable memory kind; merged duplicates cannot be independently reactivated. Persona analysis, chat and proactive greetings use effective corrected sources; preview notes do not enter the official persona. Sleep consolidation deduplicates identical sources, retires old summaries after source correction, and uses corrected text on the next consolidation.
+
+### Capability boundaries for this round (unreleased)
+
+| Capability | Entry | Calls and limits |
+|---|---|---|
+| First-run guidance | Top-bar guide / first empty launch | Local checks only; no service test or model call |
+| Call duration and estimated allowance | Before starting a voice call | Server checks estimates before requests; no hard cap on actual bills |
+| Segmented call speech | Normal voice-call replies | Same model/voice, at most three TTS calls per reply; distinct from recorded voice notes |
+| Document questions | Read this file on a file card | At most one chat call after confirmation; size/page/character limits and no OCR |
+| Chat memory controls | Memory beside a message | Confirmed local save/correction/deactivation; history and separate material remain |
+| Paged review and persona sources | Import review / persona analysis or editing | Only reviewed, checked rows are accepted; official persona excludes preview/deactivated notes and uses historical corrections |
+| Maintenance and world rollback | Maintenance dialog / world page | Older-memory editing, reapproval, summary deduplication and event rollback; cannot recall data already sent to providers |
+| Packages and database restore | Settings & Export | Local corrupt-package, source-mapping and restore-undo checks; database copies do not include assets/credentials |
+| Proactive contact | Proactive settings | Failed attempts count toward rolling 24-hour limits; three consecutive failures pause contact; local chat only |
+| Media jobs and costs | Service hub / Build Center | Routed calls atomically reserve estimates; cancelled late results are not activated; remote billing/cancellation remains provider-controlled |
+
+The 2026-10-12 fixes are checked with synthetic materials, temporary databases, loopback protocol servers, frontend controllers and browser flows. These checks do not extend earlier live API, camera/microphone or other-platform acceptance, and do not include separately listed experience upgrades.
 
 
-### Voice-cloning estimate correction (2026-10-05)
+### Cost estimates and usage records (2026-10-12)
 
-The following estimate validation and pre-call budget checks apply only to voice-cloning capability routes in the unified service hub, including Aliyun connections selected through those routes. Without such a route, the legacy Aliyun connection can still be used; it does not have the same per-call CNY estimate validation or remaining-budget preflight. Prefer the unified service hub for new configurations.
+Unified capability routes check enabled state, consent and estimates before dispatch, atomically reserving daily/monthly estimated budgets. Concurrent requests share reserved amounts. Each request settles once using the estimate frozen at dispatch; later price edits do not change old records. Complete normal chat adjusts its estimate using returned characters. Failure, interruption or early truncation retains the conservative reservation with unknown settlement. Polling an existing video task does not charge another local generation estimate. Estimates are not actual debits or hard caps on provider bills.
 
-The old 1.5 default did not distinguish currency. Mainland MiniMax official endpoints now default to CNY 9.90 per voice, from the [official pricing page](https://platform.minimax.cn/docs/guides/pricing-paygo). The provider charges cloning at first synthesis; the app records the estimate at successful cloning to account for it early, not as an actual debit. Audition synthesis is separate.
+A daily/monthly budget without a reliable estimate blocks calls. Set a per-call CNY amount for the capability in advanced `cost_estimates`. Unknown prices without a configured budget can proceed but are recorded as unknown, not free. Some MiniMax capabilities retain code defaults; these are not promises of current provider pricing.
 
-International endpoints, proxies, and other services require an explicit per-call CNY estimate in cost_estimates.voice_clone. Valid custom estimates take precedence; negative, nonfinite, and zero cloud-cloning estimates are rejected. Before upload, the cloning estimate must fit remaining daily/monthly budgets. An unavailable configured cloning route cannot fall back to the legacy connection. This is not an atomic reservation for concurrent requests or a guarantee about actual bills. Other capabilities retain their existing estimation limits; this change addresses voice cloning specifically.
+Voice cloning still requires a valid per-call CNY estimate. The code default for Mainland MiniMax official endpoints is CNY 9.90 per voice; international endpoints, proxies and other services cannot inherit it. Valid custom values take precedence, and cloud cloning rejects zero, negative and nonfinite values. Cloning and audition synthesis are accounted separately. An unavailable configured route does not silently use an older account; voice ownership must match its account.
+
+Unified-budget guarantees do not cover legacy paths without the corresponding capability route (including legacy model, Aliyun and North configurations), or independently configured OCR. Prefer the unified service hub for new setups; legacy use still needs provider-side limits. Cancellation prevents subsequent local handling/activation, not guaranteed remote cancellation or refunds. This round adds no successful live-service acceptance claim.

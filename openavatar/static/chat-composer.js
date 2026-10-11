@@ -24,9 +24,11 @@ function renderChatMessage(row) {
   if (row.message_kind === 'video' && media) content = tr`<video class="chat-message-video" controls preload="metadata" src="${media}"></video>`;
   if (row.message_kind === 'audio' && media) content = tr`<div class="voice-note-label">${chatIcon('mic')} 语音消息 · ${Math.ceil(meta.duration || 0)}秒</div><audio controls preload="metadata" src="${media}"></audio>${row.content.startsWith('[语音]') ? '' : `<p class="voice-note-text">${escapeHtml(row.content)}</p>`}`;
   if (row.message_kind === 'file' && media) content = tr`<a class="chat-file-card" href="${media}?download=true" download>${chatIcon('file')}<span><b>${name}</b><small>${formatChatSize(meta.size)} · 点击下载</small></span></a>`;
+  if (typeof renderChatDocumentControls === 'function') content += renderChatDocumentControls(row);
+  if (typeof renderChatDocumentSource === 'function') content += renderChatDocumentSource(row);
   if (row.message_kind === 'location') content = tr`<div class="chat-location-card">${chatIcon('pin')}<span><b>${name}</b><small>${escapeHtml(meta.address || tr('分享的地点'))}</small></span></div>`;
   if (row.message_kind === 'call') return tr`<div class="chat-call-record">${chatIcon('phone')} ${Number.isFinite(meta.duration) ? tr`语音通话 ${String(Math.floor(meta.duration/60)).padStart(2,'0')}:${String(meta.duration%60).padStart(2,'0')}` : escapeHtml(row.content)}</div>`;
-  return tr`<div class="message ${row.role === 'user' ? 'user' : 'assistant'} ${row.channel === 'proactive' ? 'proactive' : ''}" data-message-id="${Number(row.id)}">${content}<div class="message-tools"><button type="button" data-chat-favorite="${Number(row.id)}" data-starred="${!!row.starred}" aria-label="${row.starred ? tr('取消收藏') : tr('收藏消息')}" title="${row.starred ? tr('取消收藏') : tr('收藏消息')}">${row.starred ? '★' : '☆'}</button>${row.role === 'assistant' && !chatMediaKinds.has(row.message_kind) ? tr('<button type="button" class="message-audio" data-action="speak-message" title="使用所选声音播放">♫</button>') : ''}</div></div>`;
+  return tr`<div class="message ${row.role === 'user' ? 'user' : 'assistant'} ${row.channel === 'proactive' ? 'proactive' : ''}" data-message-id="${Number(row.id)}">${content}<div class="message-tools">${typeof renderChatMemoryAction === 'function' ? renderChatMemoryAction(row) : ''}<button type="button" data-chat-favorite="${Number(row.id)}" data-starred="${!!row.starred}" aria-label="${row.starred ? tr('取消收藏') : tr('收藏消息')}" title="${row.starred ? tr('取消收藏') : tr('收藏消息')}">${row.starred ? '★' : '☆'}</button>${row.role === 'assistant' && !chatMediaKinds.has(row.message_kind) ? tr('<button type="button" class="message-audio" data-action="speak-message" title="使用所选声音播放">♫</button>') : ''}</div></div>`;
 }
 function formatChatSize(bytes=0) { return bytes > 1048576 ? `${(bytes/1048576).toFixed(1)} MB` : `${Math.max(1,Math.round(bytes/1024))} KB`; }
 function closeComposerPanels() {
@@ -55,14 +57,14 @@ async function refreshChatHeader() {
     if(selected?.asset_url) { const image = document.createElement('img'); image.alt=avatar.name; image.src=selected.asset_url; $('#chatAvatar').replaceChildren(image); }
   } catch (_) {}
 }
-let pendingChatAttachment=null, attachmentObjectURL='', chatCameraStream=null, chatCaptureGeneration=0;
+let pendingChatAttachment=null, attachmentObjectURL='', chatCameraStream=null, chatCaptureGeneration=0, composerGeneration=0;
 function clearChatAttachment() {
   if(attachmentObjectURL) URL.revokeObjectURL(attachmentObjectURL);
   attachmentObjectURL='';pendingChatAttachment=null;$('#attachmentPreview').replaceChildren();
 }
 function previewChatAttachment(file,kind,options={}) {
   clearChatAttachment();
-  pendingChatAttachment={file,kind,avatarId:state.currentId,preview:state.previewMode,key:crypto.randomUUID(),...options};
+  pendingChatAttachment={generation:composerGeneration,file,kind,avatarId:state.currentId,preview:state.previewMode,key:crypto.randomUUID(),...options};
   attachmentObjectURL=URL.createObjectURL(file);
   $('#attachmentTitle').textContent=kind==='audio'?tr('发送语音消息'):tr('发送附件');
   const node=document.createElement(kind==='image'?'img':kind==='video'?'video':kind==='audio'?'audio':'div');
@@ -84,20 +86,23 @@ function previewChatAttachment(file,kind,options={}) {
 $('#chatMediaPicker').onchange=event=>{const f=event.target.files[0];if(f)previewChatAttachment(f,f.type.startsWith('video/')?'video':'image');event.target.value='';};
 $('#chatFilePicker').onchange=event=>{const f=event.target.files[0];if(f)previewChatAttachment(f,'file');event.target.value='';};
 $('#sendChatAttachment').onclick=async()=>{
-  const draft=pendingChatAttachment;if(!draft||draft.avatarId!==state.currentId)return;
+  const draft=pendingChatAttachment;if(!draft||draft.sending||draft.avatarId!==state.currentId||!!draft.preview!==!!state.previewMode)return;
+  draft.sending=true;const transcript=$('#voiceMessageTranscript').value.trim();
+  const belongs=()=>draft.generation===composerGeneration&&state.currentId===draft.avatarId&&!!state.previewMode===!!draft.preview;
+  const ownsDraft=()=>pendingChatAttachment===draft;
   const button=$('#sendChatAttachment');button.disabled=true;button.textContent=tr('发送中…');$('#attachmentError').textContent='';
   try {
     const query=new URLSearchParams({kind:draft.kind,preview_mode:String(!!draft.preview),duration:String(draft.duration||0),client_key:draft.key});
     const response=await fetch(`/api/avatars/${draft.avatarId}/messages/attachment?${query}`,{method:'POST',headers:{'X-File-Name':encodeURIComponent(draft.file.name),'Content-Type':draft.file.type||'application/octet-stream'},body:draft.file});
     const result=await response.json();if(!response.ok)throw new Error(result.detail||tr('附件发送失败'));
-    const transcript=$('#voiceMessageTranscript').value.trim();
+    if(!ownsDraft()||!belongs())return;
     $('#chatAttachmentDialog').close();
-    if(state.currentId!==draft.avatarId)return;
     await loadMessages();
+    if(!belongs()||pendingChatAttachment)return;
     if(draft.kind==='audio'&&transcript) await sendTextMessage(transcript,result.id);
     if(draft.kind==='image') await understandChatImage(result.id,draft.avatarId,!!draft.preview);
-  } catch(error) {$('#attachmentError').textContent=error.message;button.textContent=tr('重试发送');}
-  finally {button.disabled=false;}
+  } catch(error) {if(ownsDraft()&&belongs()){$('#attachmentError').textContent=error.message;button.textContent=tr('重试发送');}}
+  finally {draft.sending=false;if(ownsDraft())button.disabled=false;}
 };
 function syncChatCameraMirror() { $('#chatCameraPreview').classList.toggle('camera-mirrored', $('#chatCameraMirror').checked); }
 $('#chatCameraMirror').onchange=syncChatCameraMirror;
@@ -167,6 +172,7 @@ document.addEventListener('click',async event=>{
   if(resend){resend.disabled=true;const id=state.currentId;try{await api(`/api/avatars/${id}/messages/${resend.dataset.chatResend}/resend`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:tr('收藏'),client_key:resend.dataset.sendKey||(resend.dataset.sendKey=crypto.randomUUID()),preview_mode:!!state.previewMode})});$('#chatFavoritesDialog').close();if(state.currentId===id)await loadMessages();}catch(error){toast(error.message,true);}finally{resend.disabled=false;}}
 });
 $('#chooseVideoCall').onclick=()=>{cancelVoiceMessage();$('#callChoiceDialog').close();$('#chatVideoDialog').showModal();};
+$('#chatVideoDialog').addEventListener('close',()=>{if(state.videoCallStarting)void endVideoCall();});
 $('#chatVideoDialog').addEventListener('cancel',event=>{if(state.videoCall?.id){event.preventDefault();toast(tr('请先结束视频通话，再关闭窗口。'));}});
 // Avoid silently discarding an active video call when the close button is clicked.
 $('#chatVideoDialog [data-close-chat-dialog]').removeAttribute('data-close-chat-dialog');
@@ -181,13 +187,13 @@ $('#toggleVoiceMessage').onclick=()=>{
   voiceNoteNotice(voiceNoteMode?(explained?tr('按住说话，松开发送，上滑取消。'):tr('按住说话，松开发送，上滑取消。识别可能使用浏览器服务，发送后按识别文字请求人物回复，可能产生对话费用。')):'');
   if(voiceNoteMode) localStorage.setItem('voice-note-direct-explained','1');
 };
-function cancelVoiceMessage() {++voiceNoteGeneration;if(voiceNote){voiceNote.cancelled=true;clearTimeout(voiceNote.timer);voiceNote.recognition?.abort();if(voiceNote.recorder?.state==='recording')voiceNote.recorder.stop();voiceNote.stream?.getTracks().forEach(t=>t.stop());voiceNote=null;}$('#holdVoiceMessage').classList.remove('recording','cancelling');$('#holdVoiceMessage').textContent=tr('按住说话');}
+function cancelVoiceMessage() {++voiceNoteGeneration;voiceSending=false;if(voiceNote){voiceNote.cancelled=true;clearTimeout(voiceNote.timer);voiceNote.recognition?.abort();if(voiceNote.recorder?.state==='recording')voiceNote.recorder.stop();voiceNote.stream?.getTracks().forEach(t=>t.stop());voiceNote=null;}$('#holdVoiceMessage').classList.remove('recording','cancelling');$('#holdVoiceMessage').textContent=tr('按住说话');}
 async function startVoiceMessage(event) {
   if(event.button && event.button!==0)return;event.preventDefault();
   if(voiceSending){voiceNoteNotice(tr('上一条语音正在发送…'));return;}
   if(activeVoiceCall?.active||state.videoCall?.id){voiceNoteNotice(tr('请先结束当前通话，再录制语音消息。'));return;}
   cancelVoiceMessage();if(event.pointerId!==undefined)event.currentTarget.setPointerCapture(event.pointerId);const generation=voiceNoteGeneration;
-  const note={avatarId:state.currentId,started:Date.now(),chunks:[],transcript:'',startY:event.clientY,cancelled:false,preview:!!state.previewMode,key:crypto.randomUUID()};voiceNote=note;
+  const note={generation,avatarId:state.currentId,started:Date.now(),chunks:[],transcript:'',startY:event.clientY,cancelled:false,preview:!!state.previewMode,key:crypto.randomUUID()};voiceNote=note;
   $('#holdVoiceMessage').textContent=tr('正在开启麦克风…');
   try {
     if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)throw new Error(tr('当前浏览器不支持录音，请使用 Chrome。'));
@@ -198,13 +204,13 @@ async function startVoiceMessage(event) {
     note.recorder.ondataavailable=e=>{if(e.data.size)note.chunks.push(e.data);};
     note.recorder.onstop=async()=>{
       note.stream.getTracks().forEach(t=>t.stop());try{note.recognition?.stop();}catch(_){}clearTimeout(note.timer);
-      if(note.cancelled||generation!==voiceNoteGeneration||state.currentId!==note.avatarId||!note.chunks.length){voiceSending=false;return;}
+      if(note.cancelled||generation!==voiceNoteGeneration||state.currentId!==note.avatarId||!note.chunks.length){if(generation===voiceNoteGeneration)voiceSending=false;return;}
       const type=note.recorder.mimeType,extension=type.includes('mp4')?'m4a':type.includes('ogg')?'ogg':'webm';
       const blob=new Blob(note.chunks,{type});
       voiceSending=true;
       if(note.recognitionDone) await Promise.race([note.recognitionDone,new Promise(resolve=>setTimeout(resolve,1000))]);
       note.recognition?.abort();
-      if(generation!==voiceNoteGeneration||state.currentId!==note.avatarId){voiceSending=false;return;}
+      if(generation!==voiceNoteGeneration||state.currentId!==note.avatarId){if(generation===voiceNoteGeneration)voiceSending=false;return;}
       note.file=new File([blob],`语音-${Date.now()}.${extension}`,{type});
       await sendDirectVoiceNote(note);
     };
@@ -222,22 +228,25 @@ async function startVoiceMessage(event) {
   }catch(error){cancelVoiceMessage();voiceNoteNotice(error.message||tr('麦克风不可用，请检查权限。'));}
 }
 async function sendDirectVoiceNote(note) {
-  if(state.currentId!==note.avatarId){voiceSending=false;return;}
+  const generation=note.generation??voiceNoteGeneration;
+  const belongs=()=>generation===voiceNoteGeneration&&state.currentId===note.avatarId&&!!state.previewMode===!!note.preview;
+  if(!belongs())return;
   voiceSending=true;voiceNoteNotice(tr('语音发送中…'));
   try {
     const query=new URLSearchParams({kind:'audio',preview_mode:String(note.preview),duration:String(note.duration),client_key:note.key});
     const response=await fetch(`/api/avatars/${note.avatarId}/messages/attachment?${query}`,{method:'POST',headers:{'X-File-Name':encodeURIComponent(note.file.name),'Content-Type':note.file.type},body:note.file});
     const result=await response.json();if(!response.ok)throw new Error(result.detail||tr('语音发送失败'));
-    if(state.currentId!==note.avatarId||!!state.previewMode!==note.preview)return;
+    if(!belongs())return;
     await loadMessages();
+    if(!belongs())return;
     voiceNoteNotice(note.transcript?tr('语音已发送'):tr('语音已发送，未识别到文字。可以补发一条文字消息。'));
     if(note.transcript)await sendTextMessage(note.transcript,result.id);
   } catch(error) {
-    if(state.currentId!==note.avatarId)return;
+    if(!belongs())return;
     voiceNoteNotice(tr`语音未发送：${error.message} `);
     const retry=document.createElement('button');retry.type='button';retry.textContent=tr('重试发送');
     retry.onclick=()=>{if(!voiceSending)sendDirectVoiceNote(note);};$('#composerNotice').append(retry);
-  } finally {voiceSending=false;}
+  } finally {if(generation===voiceNoteGeneration)voiceSending=false;}
 }
 function finishVoiceMessage(event) {
   const note=voiceNote;if(!note)return;
@@ -255,6 +264,7 @@ $('#holdVoiceMessage').addEventListener('keydown',event=>{if((event.key===' '||e
 $('#holdVoiceMessage').addEventListener('keyup',event=>{if(event.key===' '||event.key==='Enter')finishVoiceMessage();});
 $('#voiceMessageTranscript').addEventListener('input',()=>{$('#voiceMessageTranscript').dataset.edited='true';});
 function resetChatComposer() {
+  ++composerGeneration;
   cancelVoiceMessage();stopChatCamera();closeComposerPanels();
   for(const id of ['chatAttachmentDialog','chatCameraDialog','chatLocationDialog','chatFavoritesDialog','callChoiceDialog'])$("#"+id).close();
   $('#chatMessageInput').value='';$('#chatMessageInput').dispatchEvent(new Event('input'));

@@ -15,6 +15,7 @@ from openavatar.local_model import LocalModelError
 from openavatar.providers import ChatProvider, ProviderConfig, ProviderError
 from openavatar.runtime import Metrics, RunRegistry
 from openavatar.services.persona import relevant_memories, style_signature
+from openavatar.services.memory_intelligence import effective_memories
 from openavatar.services.persona_core import current_persona_core, record_decision, record_usage
 from openavatar.services.world_regions import avatar_language_profile
 
@@ -66,7 +67,7 @@ class ChatService:
         if not include_call_context:
             channel_filter += " AND channel<>'voice_call'"
         rows = list(reversed(self.db.all(
-            f"SELECT id,role,content,channel,created_at,media_url,media_type,message_kind,attachment_json,starred FROM messages WHERE avatar_id=? AND {channel_filter} ORDER BY id DESC LIMIT ?",
+            f"SELECT id,role,content,channel,created_at,media_url,media_type,message_kind,attachment_json,starred,context_excluded,(SELECT COUNT(*) FROM memories m WHERE m.avatar_id=messages.avatar_id AND m.source_message_id=messages.id AND m.origin_kind='runtime_chat' AND m.confidence>0 AND m.kind NOT IN ('rejected','merged_duplicate')) AS remembered FROM messages WHERE avatar_id=? AND {channel_filter} ORDER BY id DESC LIMIT ?",
             (avatar_id, safe_limit),
         )))
         for row in rows:
@@ -77,6 +78,7 @@ class ChatService:
         return rows
 
     def prepare(self, avatar_id: str, message: str, preview_mode: bool = False, source_message_id: int = 0) -> dict[str, Any]:
+        database_epoch = self.db.notification_epoch()
         avatar = self.require_avatar(avatar_id)
         if source_message_id:
             source = self.db.one("SELECT * FROM messages WHERE avatar_id=? AND id=? AND role='user' AND message_kind='audio'", (avatar_id, source_message_id))
@@ -88,14 +90,8 @@ class ChatService:
             raise HTTPException(409, "必须项未完成，暂时不能正式使用；可以在预览测试模式中试聊。")
         persona_core = current_persona_core(self.db, avatar_id)
         persona = persona_core["core"].get("persona", self.get_persona(avatar_id))
-        history = self.get_messages(avatar_id, 20, "preview" if preview_mode else "official", include_call_context=True)
-        memory_rows = self.db.all(
-            """SELECT COALESCE(NULLIF(c.corrected_speaker,''),m.speaker) speaker,
-                      COALESCE(NULLIF(c.corrected_content,''),m.content) content,m.is_avatar
-               FROM memories m LEFT JOIN historical_memory_corrections c ON c.memory_id=m.id
-               WHERE m.avatar_id=? ORDER BY m.id DESC LIMIT 1000""",
-            (avatar_id,),
-        )
+        history = [row for row in self.get_messages(avatar_id, 100, "preview" if preview_mode else "official", include_call_context=True) if not row.get("context_excluded")][-20:]
+        memory_rows = effective_memories(self.db, avatar_id, "preview" if preview_mode else "official")
         memories = relevant_memories(memory_rows, message)
         signature = style_signature(memory_rows)
         style_examples = [row for row in memories if row.get("is_avatar")][:8]
@@ -135,6 +131,7 @@ class ChatService:
         if not client.available():
             raise HTTPException(503, self.unavailable_message(config))
         return {
+            "database_epoch": database_epoch,
             "source_message_id": source_message_id,
             "readiness": readiness,
             "persona_core": persona_core,
@@ -146,6 +143,14 @@ class ChatService:
         }
 
     def persist(self, avatar_id: str, message: str, prepared: dict[str, Any], reply: str, latency_ms: int) -> dict[str, Any]:
+        # Hold the database object's restore lock through all turn writes.
+        with self.db.transaction() as connection:
+            epoch = connection.execute("SELECT value FROM schema_meta WHERE key='notification_epoch'").fetchone()
+            if prepared.get("database_epoch") and (not epoch or prepared["database_epoch"] != epoch[0]):
+                raise HTTPException(409, "数据库已经恢复，旧回复未写入；请重新发送。")
+            return self._persist_turn(avatar_id, message, prepared, reply, latency_ms)
+
+    def _persist_turn(self, avatar_id: str, message: str, prepared: dict[str, Any], reply: str, latency_ms: int) -> dict[str, Any]:
         now = int(time.time())
         channel = str(prepared["channel"])
         turn_id = uuid.uuid4().hex
@@ -221,8 +226,9 @@ class ChatService:
             started = time.perf_counter()
             parts: list[str] = []
             first_chunk_ms = 0
-            yield {"type": "start", "run_id": run_id, "model": client.model}
+            chunks = None
             try:
+                yield {"type": "start", "run_id": run_id, "model": client.model}
                 stream_method = getattr(client, "stream_chat", None)
                 chunks = stream_method(prepared["messages"]) if callable(stream_method) else [client.chat(prepared["messages"])]
                 for chunk in chunks:
@@ -249,6 +255,8 @@ class ChatService:
                 result = self.persist(avatar_id, message, prepared, reply, latency_ms)
                 self.metrics.observe("chat.total_ms", latency_ms)
                 yield {"type": "done", "run_id": run_id, "first_text_ms": first_chunk_ms, **result}
+            except HTTPException as exc:
+                yield {"type": "error", "run_id": run_id, "error": str(exc.detail)}
             except (LocalModelError, ProviderError) as exc:
                 config = prepared["config"]
                 latency_ms = round((time.perf_counter() - started) * 1000)
@@ -259,6 +267,11 @@ class ChatService:
                 self.metrics.increment("chat.stream.failure")
                 yield {"type": "error", "run_id": run_id, "error": str(exc)}
             finally:
-                self.runs.finish(run_id)
+                try:
+                    close = getattr(chunks, "close", None)
+                    if callable(close):
+                        close()
+                finally:
+                    self.runs.finish(run_id)
 
         return run_id, generate()

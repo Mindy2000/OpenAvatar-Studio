@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 from openavatar.db import Database
-from openavatar.services.memory_intelligence import memory_graph
+from openavatar.services.memory_intelligence import effective_memories, memory_graph
 from openavatar.services.persona import style_signature
 from openavatar.services.world_regions import avatar_language_profile
 
@@ -43,7 +43,7 @@ def build_persona_core(db: Database, avatar_id: str) -> dict[str, Any]:
     if not avatar:
         raise KeyError("数字人不存在")
     persona = db.one("SELECT * FROM persona_profiles WHERE avatar_id=?", (avatar_id,)) or {}
-    memories = db.all("SELECT speaker,content,is_avatar,kind,confidence FROM memories WHERE avatar_id=? AND confidence>0 ORDER BY id DESC LIMIT 800", (avatar_id,))
+    memories = effective_memories(db, avatar_id, limit=800)
     world = db.all("SELECT fact_key,fact_value_json,reality_kind,mutability FROM world_facts WHERE avatar_id=? AND active=1 ORDER BY fact_key LIMIT 120", (avatar_id,))
     visual = db.one("SELECT * FROM visual_assets WHERE avatar_id=? AND status='canonical' ORDER BY id DESC LIMIT 1", (avatar_id,)) or {}
     visual_set = db.one("SELECT * FROM visual_asset_sets WHERE avatar_id=? AND set_type='identity' AND status IN ('canonical','approved') ORDER BY CASE status WHEN 'canonical' THEN 0 ELSE 1 END,updated_at DESC LIMIT 1", (avatar_id,)) or {}
@@ -99,6 +99,9 @@ def build_persona_core(db: Database, avatar_id: str) -> dict[str, Any]:
         },
     }
     digest = _digest(core)
+    stored = db.one("SELECT source_digest,updated_at FROM persona_core_profiles WHERE avatar_id=?", (avatar_id,))
+    if stored and stored['source_digest'] == digest:
+        return {"digest": digest, "core": core, "updated_at": stored['updated_at']}
     now = int(time.time())
     db.execute(
         """
@@ -115,10 +118,8 @@ def build_persona_core(db: Database, avatar_id: str) -> dict[str, Any]:
 
 
 def current_persona_core(db: Database, avatar_id: str) -> dict[str, Any]:
-    row = db.one("SELECT core_json,source_digest,updated_at FROM persona_core_profiles WHERE avatar_id=?", (avatar_id,))
-    if not row:
-        return build_persona_core(db, avatar_id)
-    return {"digest": row["source_digest"], "core": json.loads(str(row["core_json"])), "updated_at": row["updated_at"]}
+    # Recompute local dependencies at the read boundary, including package/legacy writes.
+    return build_persona_core(db, avatar_id)
 
 
 def record_decision(
