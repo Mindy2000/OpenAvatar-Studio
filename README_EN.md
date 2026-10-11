@@ -8,6 +8,8 @@ OpenAvatar Studio is a locally running avatar creation and management tool. Buil
 
 The current version is **0.1.0-rc.5 release candidate**, intended for local evaluation and development. The source contains no demo avatars, personal databases, API keys, or local model weights. A fresh installation starts with an empty avatar list. Cloud features require your own accounts and may incur costs.
 
+The source also includes five unreleased upgrades: first-run setup guidance, voice-call duration and estimated-budget controls, segmented speech, explicit document questions, and per-message memory controls. See [Unreleased changes](CHANGELOG.md). These new workflows have not completed live paid-service acceptance.
+
 ## Desktop downloads
 
 Download and fully extract the ZIP for your device. Python is included; no separate Python installation is needed. These are unsigned preview builds.
@@ -31,9 +33,11 @@ The desktop launcher selects a free local port and opens a browser. Desktop and 
 - Authorized real-material and original fictional creation paths, with guided questions and file import.
 - Editable persona, evidence-backed memories, world facts/runtime, and conversation editing, archiving, and restoration.
 - A unified service hub for capability-specific providers, models, consent, fallback routes, and estimated budgets.
+- A three-step setup guide checks local configuration and opens existing settings and creation screens without calling a model. Skip it and reopen it later.
 - Streaming text chat and a WeChat-style composer: the + panel groups images/video, camera, calls, files, manual locations, and favorites. Hold to record a voice note, release to send, or slide up to cancel.
-- A dedicated voice-call window with speech interruption, mute, minimize, and hangup. Chat retains a call card rather than per-utterance bubbles. Calls combine browser recognition, a chat model, and speech synthesis.
-- Mirrored selfies and chat image understanding; transcription, voice cloning, images, and asynchronous video depend on configured services. File and video attachments are stored for display, not automatically interpreted.
+- A dedicated voice-call window with interruption, mute, minimize, and hangup; calls end at configured time or estimated-budget limits, and replies play in sentence segments. Chat retains a call card rather than per-utterance bubbles.
+- Mirrored selfies and chat image understanding; explicitly read and ask about TXT, MD, CSV, and text-layer PDFs. Uploads do not trigger analysis, and videos are not interpreted. Transcription, cloning, images, and asynchronous video depend on configured services.
+- Remember, correct, or stop using a memory beside a text or transcribed voice message. These controls run locally and retain chat history.
 - North/Atlas realtime video calls with LiveKit connectivity.
 - Visual approval, continuity asset sets, scene profiles, and video keyframe review.
 - Avatar package v3 import/export with v1/v2 compatibility and separate conversation, audio, image, video, and call-history controls.

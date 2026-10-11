@@ -42,7 +42,10 @@ function formatQuiet(value) {
 }
 
 async function loadTrainingJobs() {
-  const jobs = await api(`/api/avatars/${state.currentId}/training-jobs`);
+  const avatarId = state.currentId;
+  if (!avatarId) return;
+  const jobs = await api(`/api/avatars/${avatarId}/training-jobs`);
+  if (state.currentId !== avatarId) return;
   const done = jobs.filter(job => job.status === "completed").length;
   const active = jobs.filter(job => ["queued", "running"].includes(job.status)).length;
   const waiting = jobs.filter(job => ["waiting_configuration", "needs_review"].includes(job.status)).length;
@@ -55,26 +58,29 @@ async function loadTrainingJobs() {
 }
 
 async function loadBuildPanels() {
+  const avatarId = state.currentId;
+  if (!avatarId) return;
   const [checks, world, proposals, rights, visual, voices, transcripts, routes, devVoices, graph, core, decisions, usage, mediaReviews, videoStatus, assetSets, scenes, continuityRuns] = await Promise.all([
-    api(`/api/avatars/${state.currentId}/checks`),
-    api(`/api/avatars/${state.currentId}/world`),
-    api(`/api/avatars/${state.currentId}/world/proposals`),
-    api(`/api/avatars/${state.currentId}/rights`),
-    api(`/api/avatars/${state.currentId}/visual-assets`),
-    api(`/api/avatars/${state.currentId}/voice-profiles`),
-    api(`/api/avatars/${state.currentId}/voice-transcriptions`),
+    api(`/api/avatars/${avatarId}/checks`),
+    api(`/api/avatars/${avatarId}/world`),
+    api(`/api/avatars/${avatarId}/world/proposals`),
+    api(`/api/avatars/${avatarId}/rights`),
+    api(`/api/avatars/${avatarId}/visual-assets`),
+    api(`/api/avatars/${avatarId}/voice-profiles`),
+    api(`/api/avatars/${avatarId}/voice-transcriptions`),
     api("/api/settings/model-routes"),
     api("/api/voice/development-voices"),
-    api(`/api/avatars/${state.currentId}/memory-graph`),
-    api(`/api/avatars/${state.currentId}/persona-core`),
-    api(`/api/avatars/${state.currentId}/diagnostics/decisions`),
-    api(`/api/avatars/${state.currentId}/diagnostics/usage`),
-    api(`/api/avatars/${state.currentId}/media-reviews`),
-    api(`/api/avatars/${state.currentId}/video-call/status`),
-    api(`/api/avatars/${state.currentId}/visual-asset-sets`),
-    api(`/api/avatars/${state.currentId}/scene-profiles`),
-    api(`/api/avatars/${state.currentId}/continuity/runs`),
+    api(`/api/avatars/${avatarId}/memory-graph`),
+    api(`/api/avatars/${avatarId}/persona-core`),
+    api(`/api/avatars/${avatarId}/diagnostics/decisions`),
+    api(`/api/avatars/${avatarId}/diagnostics/usage`),
+    api(`/api/avatars/${avatarId}/media-reviews`),
+    api(`/api/avatars/${avatarId}/video-call/status`),
+    api(`/api/avatars/${avatarId}/visual-asset-sets`),
+    api(`/api/avatars/${avatarId}/scene-profiles`),
+    api(`/api/avatars/${avatarId}/continuity/runs`),
   ]);
+  if (state.currentId !== avatarId) return;
   const activeVoice = voices.find(item => item.active) || voices[0] || {};
   const canonicalVisual = visual.find(item => item.status === "canonical");
   const approvedVisuals = visual.filter(item => item.status === "approved").length;
@@ -82,7 +88,8 @@ async function loadBuildPanels() {
   const levelNames = { required: tr("必须项"), recommended: tr("推荐项"), advanced: tr("高级项") };
   $("#buildCenterTitle").textContent = checks.route === "fictional" ? tr("虚构数字人的可运行里世界") : tr("真实素材到多模态数字人");
   $("#buildCenterLead").textContent = checks.route === "fictional" ? tr("必须项完成后可正式使用；可选模块决定里世界深度，事件推进默认进入审批。") : tr("真实路线必须先有文本人格素材，再用音频、视觉、长期记忆继续增强。");
-  const jobs = await api(`/api/avatars/${state.currentId}/training-jobs`);
+  const jobs = await api(`/api/avatars/${avatarId}/training-jobs`);
+  if (state.currentId !== avatarId) return;
   renderNextAction(checks, proposals, transcripts, jobs);
   $("#buildPanels").innerHTML = tr`
     <article class="build-panel build-score"><header><span>COMPLETION STANDARD</span><b>${checks.score}</b></header>
@@ -473,18 +480,22 @@ function updateConnectionEditorHints() {
 }
 
 async function saveModelConnection(resultNode) {
-  const id = $("#settingsDialog").dataset.editConnectionId || "";
-  const result = await api(id ? `/api/model-connections/${encodeURIComponent(id)}` : "/api/model-connections", {
-    method: id ? "PUT" : "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(connectionPayload()),
-  });
-  $("#connectionApiKey").value = "";
-  $("#settingsDialog").dataset.editConnectionId = result.id;
-  resultNode.textContent = tr`连接已保存：${result.display_name}`;
-  await loadHealth();
-  await loadModelConnections();
-  return result;
+  const controls = $$('[data-action="save-model-connection"], [data-action="test-model-connection"]');
+  controls.forEach(button => { button.disabled = true; });
+  try {
+    const id = $("#settingsDialog").dataset.editConnectionId || "";
+    const result = await api(id ? `/api/model-connections/${encodeURIComponent(id)}` : "/api/model-connections", {
+      method: id ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(connectionPayload()),
+    });
+    $("#connectionApiKey").value = "";
+    $("#settingsDialog").dataset.editConnectionId = result.id;
+    resultNode.textContent = tr`连接已保存：${result.display_name}`;
+    await loadHealth();
+    await loadModelConnections();
+    return result;
+  } finally { controls.forEach(button => { button.disabled = false; }); }
 }
 
 async function saveCurrentAvatarModelSettings(payload, resultNode) {

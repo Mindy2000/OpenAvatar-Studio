@@ -4,19 +4,22 @@
 
 ## Development
 
-Use Python 3.11+. From the project directory:
+Use Python 3.11+ and Node.js 22 for development checks. Node.js is not required to run the packaged desktop app. From the project directory:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt ruff pip-audit
 .venv/bin/python -m playwright install chromium
 .venv/bin/python -m pytest -q
+node scripts/test_voice_call_controller.cjs
 .venv/bin/ruff check openavatar tests scripts --select E9,F63,F7,F82
 .venv/bin/python scripts/run_ui_checks.py
 .venv/bin/pip-audit -r requirements.txt -r requirements-dev.txt -r requirements-packaging.txt
 ```
 
 On Windows replace `.venv/bin/` with `.venv\Scripts\`; use `python` to create the environment if appropriate. UI checks create their own temporary data/server and remove test avatars afterward. They do not need your personal database. Pytest also isolates its data and uses a fresh in-memory credential store for each test, without reading or changing the OS keyring. Test credentials are discarded afterward.
+
+The Node.js check exercises the call controller with local substitutes for the browser, microphone, and network; it does not call paid services.
 
 For manual development, run `.venv/bin/python -m uvicorn openavatar.main:app --host 127.0.0.1 --port 8767 --reload`. Set a separate `OPENAVATAR_DATA_DIR` first when you do not want to use personal data.
 

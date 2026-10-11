@@ -28,6 +28,10 @@ FastAPI 提供本机 HTTP API、流式聊天、WebSocket 和静态前端。桌�
 | `static/imports.js`、`chat.js`、`video-call.js`、`app.js` | 导入、聊天、LiveKit 与事件装配 |
 | `routes/chat_media.py`、`services/chat_vision.py` | 聊天附件、人物与时间线校验、真实像素理解和成功缓存；看图失败由用户重试 |
 | `routes/calls.py`、`static/voice-call.js` | 浏览器识别、文字 WebSocket、TTS、插话取消及通话记录 |
+| `services/call_policy.py` | 未发布：服务端时长/估算额度、最多3段的句子切分；通话不自动重试或切换模型/音色 |
+| `routes/chat_documents.py`、`services/chat_documents.py`、`static/chat-documents.js` | 未发布：显式文件提问、受限本机文本提取、确认与单次调用 |
+| `routes/chat_memory.py`、`static/chat-memory.js` | 未发布：确认记忆、纠正/停用，以及原消息上下文排除 |
+| `routes/setup.py`、`services/setup.py`、`static/onboarding.js` | 未发布：三步首次引导、本机配置状态、持久化跳过；复用设置和人物向导 |
 | `static/chat-composer.js`、`static/maintenance.js` | 聊天附件交互，以及记忆修改、合并和修订历史 |
 | `i18n/` | 中英文界面资源，包含静态文案、动态提示与系统返回信息；模板参数保留用户原文 |
 
@@ -46,6 +50,14 @@ FastAPI 提供本机 HTTP API、流式聊天、WebSocket 和静态前端。桌�
 MiniMax、阿里云和 OpenRouter 的能力不同；视频适配器消费连续性参考合同，没有通用的固定主备顺序。后台轮询下载视频，FFmpeg 提取关键帧，审核结果决定重试或人工确认。关键帧不会自动升级为人物 canonical。
 
 North/Atlas 创建并释放远程 session，浏览器通过 CDN 加载 LiveKit 并订阅头像轨道；复刻 TTS 可发布到房间。另一个 `/ws/avatars/{id}/call` 网关当前处理文字输入与流式文本输出；二进制实时 ASR 尚未接入。
+
+未发布的通话协议使用 `openavatar.realtime-call.v3`：服务器保存单次时长/人民币估算额度，每个对话和语音片段请求前预留估算；失败/打断不退款式撤回预留。文本保持80字符上限，最多先发两个完整句段和一个尾段，客户端按序请求TTS并播放。每段需有效session token、run ID及顺序，重复或旧回复请求被拒；结束或打断后不播放旧队列。分段最多产生3次TTS请求，估算控制不等于实际账单封顶，也不意味着更换模型或音色。
+
+浏览器语音通话以 `voice=true` 建立连接，启动前本机预检声音配置、授权、凭据和估价；默认文本 WebSocket 模式仍兼容。每轮先检查对话加最多3段TTS的保守估算余量，再按请求分别预留。固定声音连接的状态、授权、价格和预算会重新读取，旧轮合成失败不会结束新轮。
+
+文件问答与上传分离：`chat_documents`只在明确确认后为单个附件提取文字并调用一次当前对话服务，无自动重试/主备切换。文本限2 MB，PDF限10 MB/20页，总文本限20,000字符；PDF在受限子进程解析文本层，不执行OCR。文件内容是参考数据，不是系统指令；原文件仍留在本机，聊天保存问题、回复与来源，不自动把全文加入后续每次聊天。
+
+聊天记忆操作复用记忆修订、图谱及人格缓存。纠正/停用设置消息的`context_excluded`并排除同轮内容，检索忽略已停用关联记忆；原消息不删除。首次引导用`has_key`的布尔结果及现有预算规则检查配置，把`model_ready`传入原就绪检查，避免为指南构造含密钥的模型客户端；无网络探测。
 
 ## 运行接口
 
@@ -71,4 +83,4 @@ North/Atlas 创建并释放远程 session，浏览器通过 CDN 加载 LiveKit �
 - static/voice-call.js：浏览器识别→文字WebSocket→TTS；本机麦克风检测及中间识别结果取消旧播放。routes/calls.py保存voice_call上下文与单条通话卡片。
 - static/maintenance.js：记忆修改、合并及修订历史。
 - messages和历史搜索默认隐藏voice_call；prepare显式读取供模型上下文使用。人物包关闭通话导出时排除通话文字、卡片、session/turn、回复诊断及无可靠来源区分的合成音频。
-- 2026-10-05新增UI中英文及动态提示检查通过；完整云端插话接续、镜像拍照→发送→看图联合流程已在本次 Mac 验收环境中通过，不代表其他设备、浏览器、外放噪声环境或所有服务商均已验收。ChatService普通/流式回复均强制80字符，包含预览，显示、保存与诊断一致。
+- 2026-10-05上一版本UI中英文、完整云端插话接续及镜像拍照→发送→看图已有 Mac 验收证据，不代表本轮未发布分段通话/文件阅读已通过真实付费验收，也不代表其他设备或服务商。ChatService普通/流式回复均强制80字符，包含预览，显示、保存与诊断一致。

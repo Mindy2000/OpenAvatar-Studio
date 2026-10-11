@@ -43,7 +43,7 @@ def build_persona_core(db: Database, avatar_id: str) -> dict[str, Any]:
     if not avatar:
         raise KeyError("数字人不存在")
     persona = db.one("SELECT * FROM persona_profiles WHERE avatar_id=?", (avatar_id,)) or {}
-    memories = db.all("SELECT speaker,content,is_avatar,kind,confidence FROM memories WHERE avatar_id=? AND confidence>0 ORDER BY id DESC LIMIT 800", (avatar_id,))
+    memories = db.all("SELECT speaker,content,is_avatar,kind,confidence FROM memories WHERE avatar_id=? AND confidence>0 AND kind NOT IN ('rejected','merged_duplicate') AND (origin_kind<>'runtime_chat' OR timeline_kind='official') ORDER BY id DESC LIMIT 800", (avatar_id,))
     world = db.all("SELECT fact_key,fact_value_json,reality_kind,mutability FROM world_facts WHERE avatar_id=? AND active=1 ORDER BY fact_key LIMIT 120", (avatar_id,))
     visual = db.one("SELECT * FROM visual_assets WHERE avatar_id=? AND status='canonical' ORDER BY id DESC LIMIT 1", (avatar_id,)) or {}
     visual_set = db.one("SELECT * FROM visual_asset_sets WHERE avatar_id=? AND set_type='identity' AND status IN ('canonical','approved') ORDER BY CASE status WHEN 'canonical' THEN 0 ELSE 1 END,updated_at DESC LIMIT 1", (avatar_id,)) or {}

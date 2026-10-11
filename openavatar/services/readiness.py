@@ -47,7 +47,7 @@ def route_text(db: Database, avatar_id: str) -> dict[str, int]:
     }
 
 
-def completion_report(db: Database, avatar_id: str, extra_checks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def completion_report(db: Database, avatar_id: str, extra_checks: list[dict[str, Any]] | None = None, *, model_ready: bool | None = None) -> dict[str, Any]:
     avatar = db.one("SELECT * FROM avatars WHERE id=?", (avatar_id,))
     if not avatar:
         raise KeyError("数字人不存在")
@@ -86,7 +86,11 @@ def completion_report(db: Database, avatar_id: str, extra_checks: list[dict[str,
         has_model_choice = bool(model_settings) or bool(db.setting("model", {}))
     from openavatar.services.provider_hub import find_route, routed_chat_configs
 
-    if find_route(db, "chat", avatar_id):
+    if model_ready is not None:
+        # Local setup checks provide an opaque credential-presence result rather
+        # than constructing a full ProviderConfig containing the secret.
+        has_model_choice = model_ready
+    elif find_route(db, "chat", avatar_id):
         has_model_choice = any(
             config.model and (config.mode == "local_openai" or config.api_key)
             for config in routed_chat_configs(db, avatar_id)

@@ -319,8 +319,8 @@
   <dialog id="chatFavoritesDialog" class="chat-attachment-dialog"><div class="chat-dialog-heading"><h2>收藏</h2><button type="button" data-close-chat-dialog aria-label="关闭收藏">×</button></div><div id="chatFavoritesList"></div></dialog>
   <dialog id="voiceCallDialog" class="voice-call-window" aria-labelledby="voicePersonName">
     <div class="voice-window-top"><span>语音通话</span><button type="button" id="minimizeVoiceCall" aria-label="最小化通话窗口">—</button><button type="button" id="closeVoiceWindow" aria-label="关闭并结束通话">×</button></div>
-    <div class="voice-person"><div class="voice-avatar-frame"><img id="voicePersonAvatar" alt="已确认的人物头像" hidden><span id="voicePersonInitial">O</span></div><h2 id="voicePersonName">数字人</h2><p id="voiceCallStatus" role="status" aria-live="polite">准备好，就和我说说话吧</p><time id="voiceCallTimer">00:00</time></div>
-    <div id="voiceCallBeforeStart" class="voice-before-start"><p>使用已选择的人物声音 · 建议佩戴耳机</p><small>本次最多3轮、10分钟。浏览器可能将音频发送给识别服务；对话和声音合成可能收费。</small><button type="button" id="connectVoiceCall">☎ 开始通话</button></div>
+    <div class="voice-person"><div class="voice-avatar-frame"><img id="voicePersonAvatar" alt="已确认的人物头像" hidden><span id="voicePersonInitial">O</span></div><h2 id="voicePersonName">数字人</h2><p id="voiceCallStatus" role="status" aria-live="polite">准备好，就和我说说话吧</p><time id="voiceCallTimer">00:00</time><p id="voiceCallLimits" class="chat-dialog-note" aria-live="polite"></p></div>
+    <div id="voiceCallBeforeStart" class="voice-before-start"><p>使用已选择的人物声音 · 建议佩戴耳机</p><div class="voice-call-settings"><label>最长通话分钟数<input id="voiceCallMaxMinutes" type="number" min="1" max="120" step="1" value="10"></label><label>本次估算额度（元）<input id="voiceCallBudget" type="number" min="0.01" max="1000" step="0.01" value="5"></label></div><small>本次对话与语音合成的人民币估算额度，不是服务商账单硬上限。浏览器可能将音频发送给识别服务。</small><button type="button" id="connectVoiceCall">☎ 开始通话</button></div>
     <div id="voiceCallActions" class="voice-call-actions" hidden>
       <button type="button" id="muteVoiceCall" aria-pressed="false"><span class="voice-control-icon"><svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></span><span id="voiceMuteLabel">麦克风已开</span></button>
       <button type="button" id="endVoiceCall" class="voice-hangup"><span class="voice-control-icon"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M2 12c5.5-5.3 14.5-5.3 20 0l-2.5 4-4-2v-3a12 12 0 0 0-7 0v3l-4 2z"/></svg></span><span>挂断</span></button>
@@ -496,12 +496,15 @@
   <script src="./core.js" defer></script>
   <script src="./profile.js" defer></script>
   <script src="./video-call.js" defer></script>
-  <script src="./voice-call.js?v=20261004-call-record" defer></script>
+  <script src="./voice-call.js?v=20261011-daily-use" defer></script>
   <script src="./settings.js" defer></script>
   <script src="./imports.js" defer></script>
   <script src="./maintenance.js" defer></script>
+  <script src="./onboarding.js" defer></script>
   <script src="./app.js" defer></script>
   <script src="./chat.js" defer></script>
+  <script src="./chat-memory.js" defer></script>
+  <script src="./chat-documents.js" defer></script>
   <script src="./chat-composer.js" defer></script>
 </body>
 </html>

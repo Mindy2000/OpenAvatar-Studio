@@ -212,6 +212,8 @@ async function setInterfaceLanguage(language) {
       await loadEvidence();
     }
     if (typeof refreshChatLanguage === "function") await refreshChatLanguage();
+    if (typeof refreshChatMemoryLanguage === "function") refreshChatMemoryLanguage();
+    if (typeof refreshChatDocumentLanguage === "function") refreshChatDocumentLanguage();
     if (state.lastEvaluation) renderEvaluation(state.lastEvaluation.result, state.lastEvaluation.kind);
     if (state.packageInfo) renderPackagePreview(state.packageInfo);
     if (state.currentImport) renderImportReview();
@@ -261,7 +263,7 @@ function showView(id) {
 }
 
 function closeAuxiliaryDialogs() {
-  ["#onboardingDialog", "#diagnosticsDialog", "#privacyDialog", "#packageDialog", "#packageExportDialog", "#capabilitiesDialog"].forEach(selector => {
+  ["#onboardingDialog", "#setupGuideDialog", "#chatMemoryDialog", "#chatDocumentDialog", "#diagnosticsDialog", "#privacyDialog", "#packageDialog", "#packageExportDialog", "#capabilitiesDialog"].forEach(selector => {
     const dialog = $(selector);
     if (dialog?.open) dialog.close();
   });

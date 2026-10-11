@@ -67,7 +67,7 @@ async def proactive_tick(
         memory_context = ""
         if rules["use_long_term_memory"]:
             recent_memories = db.all(
-                    "SELECT content FROM memories WHERE avatar_id=? ORDER BY id DESC LIMIT 12",
+                    "SELECT content FROM memories WHERE avatar_id=? AND confidence>0 AND kind NOT IN ('rejected','merged_duplicate') AND (origin_kind<>'runtime_chat' OR timeline_kind='official') ORDER BY id DESC LIMIT 12",
                     (avatar["id"],),
             )
             memory_context = "可参考的长期记忆：" + "；".join(str(row["content"])[:120] for row in recent_memories)

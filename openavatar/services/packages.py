@@ -115,7 +115,7 @@ def export_avatar(
         raise KeyError("数字人不存在")
     persona = db.one("SELECT * FROM persona_profiles WHERE avatar_id=?", (avatar_id,)) or {}
     memories = db.all(
-        "SELECT speaker,content,kind,is_avatar,confidence,created_at FROM memories WHERE avatar_id=? ORDER BY id",
+        "SELECT id,speaker,content,kind,is_avatar,confidence,created_at,origin_kind,source_message_id,timeline_kind FROM memories WHERE avatar_id=? ORDER BY id",
         (avatar_id,),
     )
     evidence = db.all(
@@ -123,7 +123,7 @@ def export_avatar(
         (avatar_id,),
     )
     messages = db.all(
-        "SELECT role,content,channel,created_at,message_kind,attachment_json,starred,media_type FROM messages WHERE avatar_id=? ORDER BY id",
+        "SELECT id,role,content,channel,created_at,message_kind,attachment_json,starred,media_type,context_excluded,turn_id FROM messages WHERE avatar_id=? ORDER BY id",
         (avatar_id,),
     )
     rights = db.all(
@@ -273,7 +273,7 @@ def export_avatar(
         memory_graph_nodes = []
         memory_graph_edges = []
         persona_core = {}
-        memories = [row for row in memories if str(row.get("kind")) not in {"conversation", "imported"}]
+        memories = [row for row in memories if str(row.get("kind")) not in {"conversation", "imported", "chat_note"} and row.get("origin_kind") != "runtime_chat"]
         evidence = [row for row in evidence if str(row.get("source_type")) not in {"real_conversation", "real_avatar_utterances", "real_image_ocr"}]
         imports = [row for row in imports if str(row.get("category")) != "conversation"]
     if not include_audio:
@@ -527,17 +527,26 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                     now,
                 ),
             )
+            memory_source_links = []
+            memory_ids = {}
             for row in memories[:200000] if isinstance(memories, list) else []:
                 if not isinstance(row, dict) or not str(row.get("content", "")).strip():
                     continue
-                connection.execute(
-                    "INSERT INTO memories(avatar_id,speaker,content,kind,is_avatar,confidence,created_at) VALUES(?,?,?,?,?,?,?)",
+                memory_cursor = connection.execute(
+                    "INSERT INTO memories(avatar_id,speaker,content,kind,is_avatar,confidence,created_at,origin_kind,timeline_kind) VALUES(?,?,?,?,?,?,?,?,?)",
                     (
                         new_id, str(row.get("speaker", ""))[:100], str(row["content"])[:100000],
                         str(row.get("kind", "imported"))[:50], int(bool(row.get("is_avatar", False))),
                         min(max(float(row.get("confidence", 1)), 0), 1), int(row.get("created_at", now)),
+                        "runtime_chat" if row.get("origin_kind") == "runtime_chat" else "legacy_baseline",
+                        "preview" if row.get("timeline_kind") == "preview" else "official",
                     ),
                 )
+                if type(row.get("id")) is int and row["id"] > 0:
+                    memory_ids[row["id"]] = memory_cursor.lastrowid
+                if row.get("origin_kind") == "runtime_chat":
+                    source_id = row.get("source_message_id", 0)
+                    memory_source_links.append((memory_cursor.lastrowid, source_id if type(source_id) is int else 0))
             for row in evidence[:200000] if isinstance(evidence, list) else []:
                 if not isinstance(row, dict) or not str(row.get("content", "")).strip():
                     continue
@@ -557,14 +566,38 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
                         int(row.get("created_at", now)),
                     ),
                 )
+            message_ids = {}
             for row in messages[:100000] if isinstance(messages, list) else []:
                 if not isinstance(row, dict) or row.get("role") not in {"user", "assistant", "system"}:
                     continue
-                connection.execute(
-                    "INSERT INTO messages(avatar_id,role,content,channel,created_at,message_kind,attachment_json,starred,media_type) VALUES(?,?,?,?,?,?,?,?,?)",
+                message_cursor = connection.execute(
+                    "INSERT INTO messages(avatar_id,role,content,channel,created_at,message_kind,attachment_json,starred,media_type,context_excluded,turn_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (new_id, row["role"], str(row.get("content", ""))[:100000], str(row.get("channel", "imported"))[:50], int(row.get("created_at", now)),
-                     str(row.get("message_kind", "text"))[:30], json.dumps(json.loads(row.get("attachment_json") or "{}"), ensure_ascii=False), int(bool(row.get("starred"))), str(row.get("media_type", ""))[:100]),
+                     str(row.get("message_kind", "text"))[:30], json.dumps(json.loads(row.get("attachment_json") or "{}"), ensure_ascii=False), int(bool(row.get("starred"))), str(row.get("media_type", ""))[:100], int(bool(row.get("context_excluded"))), str(row.get("turn_id", ""))[:64]),
                 )
+                if type(row.get("id")) is int and row["id"] > 0:
+                    message_ids[row["id"]] = message_cursor.lastrowid
+            # Imported file questions retain their visible text and source, but
+            # never reuse an answer cached under another avatar/persona.
+            for new_message_id in message_ids.values():
+                imported_message = connection.execute("SELECT attachment_json FROM messages WHERE id=?", (new_message_id,)).fetchone()
+                metadata = json.loads(imported_message["attachment_json"] or "{}")
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                metadata.pop("document", None)
+                metadata.pop("document_question", None)
+                if isinstance(metadata.get("document_source"), dict):
+                    old_id = metadata["document_source"].get("message_id")
+                    if type(old_id) is int and old_id in message_ids:
+                        metadata["document_source"]["message_id"] = message_ids[old_id]
+                    else:
+                        metadata.pop("document_source", None)
+                connection.execute("UPDATE messages SET attachment_json=? WHERE id=?", (json.dumps(metadata, ensure_ascii=False), new_message_id))
+            for memory_id, old_source_id in memory_source_links:
+                source_id = message_ids.get(old_source_id, 0)
+                connection.execute("UPDATE memories SET source_message_id=? WHERE id=?", (source_id, memory_id))
+                if not source_id:
+                    connection.execute("UPDATE memories SET confidence=0,kind='rejected' WHERE id=?", (memory_id,))
             for row in optional["rights"][:10000] if isinstance(optional["rights"], list) else []:
                 if not isinstance(row, dict):
                     continue
@@ -918,9 +951,13 @@ def import_avatar_package(db: Database, avatars_dir: Path, archive_path: Path) -
             for row in optional["memory_revisions"][:50000] if isinstance(optional["memory_revisions"], list) else []:
                 if not isinstance(row, dict):
                     continue
+                note = str(row.get("note", ""))[:1000]
+                for prefix in ("合并 duplicate #", "合并到 #"):
+                    if note.startswith(prefix) and note[len(prefix):].isdigit():
+                        note = prefix + str(memory_ids.get(int(note[len(prefix):]), 0))
                 connection.execute(
                     "INSERT INTO memory_revisions(avatar_id,memory_id,before_json,after_json,action,note,created_at) VALUES(?,?,?,?,?,?,?)",
-                    (new_id, int(row.get("memory_id", 0)), str(row.get("before_json", "{}"))[:100000], str(row.get("after_json", "{}"))[:100000], str(row.get("action", ""))[:80], str(row.get("note", ""))[:1000], int(row.get("created_at", now))),
+                    (new_id, memory_ids.get(row.get("memory_id"), 0) if type(row.get("memory_id")) is int else 0, str(row.get("before_json", "{}"))[:100000], str(row.get("after_json", "{}"))[:100000], str(row.get("action", ""))[:80], note, int(row.get("created_at", now))),
                 )
             for row in optional["memory_graph_nodes"][:10000] if isinstance(optional["memory_graph_nodes"], list) else []:
                 if not isinstance(row, dict):

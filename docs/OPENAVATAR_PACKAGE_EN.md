@@ -6,6 +6,10 @@ The extension is `.openavatar.zip`. Current exports use `format: openavatar.pack
 
 Packages migrate avatar content, do not copy the OS credential store, and are not complete database snapshots. Use database backups for full database recovery.
 
+The unreleased chat-memory upgrade preserves message `context_excluded` flags, turn markers, and memory-source links when the corresponding conversations are included. `memories.json` also exports memory `id` values. Import remaps message IDs, memory IDs, `memory_revisions.memory_id`, and source IDs in merge-revision notes, preserving how source correction/deactivation affects merged memories. Missing identifiers in older packages cannot reconstruct an absent merge-provenance chain.
+
+Changing or stopping a merged chat source also deactivates memories containing it; the UI explains this beforehand without deleting original chats or separate material. Preview and official memories cannot be merged together. Sleep consolidation skips explicit chat notes and their merged derivatives. Historical text still exists in the package: deactivation is not deletion or anonymization, so inspect content before sharing.
+
 ## Structure
 
 Preflight requires `manifest.json`, `memories.json`, and `messages.json`. Other sections are optional. Current exports generally write their JSON files even when privacy filters empty their content.

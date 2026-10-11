@@ -711,6 +711,7 @@ class Database:
                 if column not in memory_columns:
                     connection.execute(f"ALTER TABLE memories ADD COLUMN {column} {definition}")
             connection.execute("UPDATE memories SET origin_kind='imported_history' WHERE source_import_id IS NOT NULL AND origin_kind='legacy_baseline'")
+            connection.execute("CREATE INDEX IF NOT EXISTS idx_memories_message ON memories(avatar_id,source_message_id)")
             message_columns = {row[1] for row in connection.execute("PRAGMA table_info(messages)")}
             message_column_defaults = {
                 "turn_id": "TEXT NOT NULL DEFAULT ''",
@@ -720,6 +721,7 @@ class Database:
                 "attachment_json": "TEXT NOT NULL DEFAULT '{}'",
                 "starred": "INTEGER NOT NULL DEFAULT 0",
                 "client_key": "TEXT NOT NULL DEFAULT ''",
+                "context_excluded": "INTEGER NOT NULL DEFAULT 0",
             }
             for column, definition in message_column_defaults.items():
                 if column not in message_columns:

@@ -52,3 +52,22 @@ dialog.voice-call-window{width:min(420px,calc(100vw - 24px));max-height:calc(100
 .camera-mirror-option{display:flex;align-items:center;gap:8px;margin:14px 0 8px;font-size:14px;color:#4c5e52}.camera-mirror-option input{width:auto;margin:0;accent-color:#07a95b}
 
 .image-understanding-status{font-size:12px;color:#718077;margin-top:8px}.image-understanding-status button{padding:5px 9px;font-size:12px}
+
+/* Daily conversation controls */
+.voice-call-settings{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;margin:12px 0}.voice-call-settings label{display:grid;gap:6px;font-size:13px}.voice-call-settings input{width:100%;box-sizing:border-box}.memory-actions{flex-wrap:wrap}.memory-original{white-space:pre-wrap;max-height:150px;overflow:auto}.message-tools{flex-wrap:wrap}#chatMemoryContent{width:100%;box-sizing:border-box}#voiceCallLimits{min-height:1.4em;font-size:12px}
+/* First-run guide: external CSS preserves the app Content Security Policy. */
+
+    #setupGuideDialog{width:min(900px,calc(100vw - 32px));max-width:900px;max-height:90vh;padding:0;border:1px solid #dbe7df;border-radius:22px;background:#f8fbf9;color:#20362b;overflow:auto}
+    #setupGuideDialog::backdrop{background:rgba(18,35,27,.42)}
+    .setup-guide-content{padding:28px}.setup-guide-heading{display:flex;justify-content:space-between;gap:20px;align-items:start}
+    .setup-guide-heading h2{margin:4px 0 10px;font-size:26px}.setup-guide-heading small{color:#48745a}.setup-guide-close{font-size:24px;min-width:40px}
+    .setup-guide-lead,.setup-guide-note{color:#51645a;line-height:1.6}.setup-guide-steps{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin:20px 0}
+    .setup-guide-step{background:white;border:1px solid #dfe9e2;border-radius:16px;padding:18px;min-width:0}.setup-guide-step h3{font-size:17px;line-height:1.4;margin:0 0 14px}
+    .setup-guide-step p,.setup-guide-step li{font-size:13px;line-height:1.55;overflow-wrap:anywhere}.setup-guide-step ul{padding-left:18px;margin:9px 0 14px}
+    .setup-guide-step button{width:100%;margin-top:8px}.setup-guide-state{display:inline-block;font-size:12px;padding:4px 9px;border-radius:20px;background:#eef1ed;color:#526058}
+    .setup-guide-state.ready{background:#e0f3e8;color:#20643f}.setup-guide-capability+.setup-guide-capability{margin-top:18px;border-top:1px solid #edf0ed;padding-top:14px}
+    .setup-guide-capability h4{margin:0 0 9px;font-size:14px}.setup-guide-detail{color:#617068}.setup-guide-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    #setupGuideError{color:#a12a32;line-height:1.5;margin:12px 0}.setup-guide-note{font-size:12px;margin:12px 0 0}
+    @media(max-width:700px){.setup-guide-content{padding:20px}.setup-guide-steps{grid-template-columns:1fr}.setup-guide-heading h2{font-size:23px}.setup-guide-step{padding:16px}}
+
+#chatDocumentResult{white-space:pre-wrap;overflow-wrap:anywhere}

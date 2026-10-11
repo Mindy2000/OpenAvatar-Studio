@@ -4,6 +4,8 @@
 
 This guide describes release candidate 0.1.0. Fresh installations have no preloaded avatars. Supply your own provider accounts, models, and weights. Imports, editing, and preliminary offline persona analysis work without a model connection.
 
+First-run setup, call limits and segmented speech, document questions, and chat memory controls are unreleased source upgrades; see the [changelog](../CHANGELOG.md). The instructions and boundaries below do not establish live paid-service acceptance for those upgrades.
+
 ## Installation and startup
 
 When a chat capability route is configured in the provider hub, the creation wizard uses it directly without requiring a legacy model connection. Build readiness also checks the route's consent, enabled state, credentials, and budget.
@@ -37,11 +39,12 @@ The desktop launcher starts a local service and opens your browser; it is not an
 
 ## First use
 
-1. Read the onboarding guide and choose real materials or fictional settings.
-2. Set identity, language, world region, and authorization.
-3. Open Global AI Settings and start with the service/capability routing section.
-4. Review Ability Status and Diagnostics for configuration and data destinations.
-5. Follow required items and next-action suggestions in the avatar Build Center.
+1. On an empty database without existing configuration, first launch shows three steps: configure Chat → optionally add Voice/Images → complete an avatar and chat.
+2. Configure opens the existing service hub. After saving a connection, choose its service and model for the capability. Closing settings returns to the guide; you can also refresh its status manually.
+3. Voice and images are optional. Avatar creation still collects identity, language, region, and material rights; the guide does not fill in or bypass consent.
+4. Complete required items in Build Center before chatting. Existing users are not forced into the guide. Dismissal is saved, and the top-bar entry reopens it.
+
+The guide checks saved routes, enabled state, models, consent, credential presence, and estimated budgets locally. It does not probe cloud services or call a model. Locally configured does not verify provider balance, model access, or an actual reply; use Ability Status and Diagnostics for further troubleshooting.
 
 UI language and avatar output language are separate. Avatars support Chinese, English, mixed, and custom language choices. Regions include Mainland China, North America, Japan, Europe, and Custom. Region rules influence world runtime; they do not imply live weather or news access.
 
@@ -129,16 +132,46 @@ Settings & Export → Data maintenance provides memory editing and approval, wor
 
 The + panel offers images/video, camera, calls, files, manual locations, and favorites. Calls branch into voice and video. Hold to record, release to send, or slide upward to cancel; recordings shorter than 0.5 seconds are discarded and the maximum is 60 seconds. Without recognized text, only the recording is saved. Voice-note replies are capped at 80 characters. Camera preview and capture are mirrored by default, with an option to disable mirroring.
 
-Chat image understanding is separate from imported-image OCR. With an authorized vision route, sending a photo requests an image-based reply; older photos have an explicit action. Successful results are cached and failures require manual retry. Files and videos are stored for display, not automatically interpreted. Chat attachments do not automatically become persona-building materials.
+Chat image understanding is separate from imported-image OCR. With an authorized vision route, sending a photo requests an image-based reply; older photos have an explicit action. Successful results are cached and failures require manual retry. File uploads are stored for display; supported text files require an explicit Read this file action before questions. Videos are not automatically interpreted. Chat attachments do not automatically become persona-building materials.
 
-Start a browser voice call from + → Calls → Voice. The microphone starts after Start call; limits are three turns and ten minutes. Mute, direct interruption, manual interruption, minimize, and hangup are supported. Browser recognition sends text to the call gateway; model replies use the selected TTS voice. A separate local microphone-level monitor stops playback early. Headphones are recommended; speaker echo, noise, and other devices need separate checks. Hiding the page or switching avatars ends the call.
+Start a browser voice call from + → Calls → Voice. Before starting, set its duration (1–120 minutes, default 10) and estimated CNY allowance (0.01–1,000, default 5). The microphone starts after Start call. The new flow no longer has a fixed three-turn limit: it warns near limits and ends at the deadline or when the remaining allowance cannot cover the next request. The allowance covers chat and speech synthesis estimates, not a hard cap on provider bills. Unknown cloud prices require an explicit valid estimate. Failed or interrupted requests may still be billed, so their estimated reservations are not refunded.
+
+Before starting, local checks verify that voice is enabled, the voice matches its connection, consent and a saved key exist, and estimates/budgets are valid; they make no cloud test request. Before each model reply, a conservative feasibility check covers chat plus up to three speech segments. Estimates are reserved separately only as requests start, avoiding double reservation. The selected voice connection's enabled state, consent, and budget are rechecked during the call without automatically changing its voice or connection.
+
+Replies remain limited to 80 characters and use the configured chat model and selected voice. Completed sentences can begin synthesis/playback early, with at most three speech segments per reply. This may mean up to three TTS requests and different totals for providers charging per request; faster playback is not guaranteed under every network condition. Segments play in order; interruption cancels old playback and queued segments. Failures do not automatically retry or switch providers.
+
+Mute, speech interruption, manual interruption, minimize, and hangup are supported. Browser recognition sends text to the call gateway. A separate local microphone-level monitor stops playback early; headphones are recommended. Speaker echo, noise, and other devices need their own checks. Switching browser tabs does not end the call. Closing or reloading the page, switching avatars, or leaving the in-app chat page ends it.
 
 The call window has no per-utterance captions. Fixed on 2026-10-05: main chat and history search hide voice_call transcripts while retaining call cards; local transcripts remain available to model context. Disabling call-history export excludes call cards, voice_call messages, sessions/turns, and all reply diagnostics. Legacy synthesized audio cannot distinguish calls from auditions, so all generated/audio files are also omitted. Original recordings and voice-note attachments follow the audio option. This does not delete local data or independently authored persona settings or memories.
 
 Proactive greetings use local time, an 80-character cap, and instructions not to invent weather, location, or activities; these instructions do not guarantee every response. Memory maintenance supports checked merges and revision history. Imported usage events marked imported_history do not count against current connection budgets.
 
 
-Ordinary text and voice-note replies enforce an 80-character limit including punctuation, consistently across streamed output and persistence. The new composer and call UI passed local English, dynamic-label, language round-trip, and user-content preservation checks. Full cloud interruption and continuation, and the combined mirrored-camera, send, and image-understanding flow passed in the current Mac acceptance environment. This does not establish acceptance on other devices, browsers, noisy speaker setups, or every provider.
+Ordinary text and voice-note replies enforce an 80-character limit including punctuation, consistently across streamed output and persistence. The previous version has Mac acceptance evidence for its English interface, full cloud interruption/continuation, and mirrored-camera, send, and image-understanding flow. That evidence does not establish live paid-service acceptance for this round's segmented calls, limits, or document questions, nor acceptance on other devices or every provider.
+
+### Explicit document questions
+
+1. Send a TXT, MD, CSV, or text-layer PDF through + → Files, then click Read this file beside its card.
+2. Enter a question, or leave it blank for a summary. Confirm sending extracted text, the question, and current conversation context to the current chat service, then send.
+3. Review the reply of up to 80 characters and its file-source button. Ask follow-up questions explicitly in the file dialog; ordinary chat does not automatically attach the full document again.
+
+Text files are limited to 2 MB; PDFs to 10 MB and 20 pages; all extracted text to 20,000 characters. Oversized files are rejected and must be split. Only PDF text layers are read: there is no OCR, and images or pages without text are not considered read. Encrypted, damaged, or timed-out PDFs are rejected. Each explicit question makes at most one current-chat-service call, with no automatic retry or provider switch. A successful default summary for the same file can be reused. Files do not automatically become persona settings, memories, or world facts.
+
+### Manage memory beside a message
+
+Click Memory beside a text or transcribed voice message, review/edit the content, then choose Remember this, Correct and remember, or Stop using this. After user confirmation these actions run locally without a model call and retain revision records.
+
+Correction or stopping use excludes the original message and same-turn reply from future context. Stopping use also deactivates linked memories; corrected memory remains available. If the chat note has been merged into another memory, the dialog warns beforehand that changing or stopping the source also deactivates memories containing it. Original chat history stays visible. This does not delete history or independently saved material, or recall requests already sent to providers. Preview and official memories cannot be merged together. Sleep consolidation skips explicitly saved chat notes and their merged derivatives, preserving source-based correction and deactivation.
+
+### Capability boundaries for this round (unreleased)
+
+| Capability | Entry | Calls and limits |
+|---|---|---|
+| First-run guidance | Top-bar guide / first empty launch | Local checks only; no service test or model call |
+| Call duration and estimated allowance | Before starting a voice call | Server checks estimates before requests; no hard cap on actual bills |
+| Segmented call speech | Normal voice-call replies | Same model/voice, at most three TTS calls per reply; distinct from recorded voice notes |
+| Document questions | Read this file on a file card | At most one chat call after confirmation; size/page/character limits and no OCR |
+| Chat memory controls | Memory beside a message | Confirmed local save/correction/deactivation; history and separate material remain |
 
 
 ### Voice-cloning estimate correction (2026-10-05)

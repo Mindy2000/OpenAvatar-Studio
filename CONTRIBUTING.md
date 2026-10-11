@@ -4,19 +4,22 @@
 
 ## 开发环境
 
-需要 Python 3.11+。在项目目录执行：
+开发检查需要 Python 3.11+ 和 Node.js 22。运行打包后的桌面应用不需要另装 Node.js。在项目目录执行：
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt ruff pip-audit
 .venv/bin/python -m playwright install chromium
 .venv/bin/python -m pytest -q
+node scripts/test_voice_call_controller.cjs
 .venv/bin/ruff check openavatar tests scripts --select E9,F63,F7,F82
 .venv/bin/python scripts/run_ui_checks.py
 .venv/bin/pip-audit -r requirements.txt -r requirements-dev.txt -r requirements-packaging.txt
 ```
 
 Windows 将 `.venv/bin/` 换为 `.venv\Scripts\`，创建环境时可使用 `python`。UI 检查自动创建临时数据目录和服务，结束后清理测试人物，不需要启动真实用户数据库。`pytest` 也使用隔离目录，并为每项测试提供内存中的临时凭据库，不读取或修改系统钥匙串；测试结束后凭据自动丢弃。
+
+Node.js 检查使用本地替身验证通话控制，不启用真实浏览器或麦克风，也不调用网络或付费服务。
 
 手动开发时运行 `.venv/bin/python -m uvicorn openavatar.main:app --host 127.0.0.1 --port 8767 --reload`；若不想使用个人数据，请先通过环境变量设置另一个 `OPENAVATAR_DATA_DIR`。
 

@@ -66,7 +66,7 @@ class ChatService:
         if not include_call_context:
             channel_filter += " AND channel<>'voice_call'"
         rows = list(reversed(self.db.all(
-            f"SELECT id,role,content,channel,created_at,media_url,media_type,message_kind,attachment_json,starred FROM messages WHERE avatar_id=? AND {channel_filter} ORDER BY id DESC LIMIT ?",
+            f"SELECT id,role,content,channel,created_at,media_url,media_type,message_kind,attachment_json,starred,context_excluded,(SELECT COUNT(*) FROM memories m WHERE m.avatar_id=messages.avatar_id AND m.source_message_id=messages.id AND m.origin_kind='runtime_chat' AND m.confidence>0 AND m.kind NOT IN ('rejected','merged_duplicate')) AS remembered FROM messages WHERE avatar_id=? AND {channel_filter} ORDER BY id DESC LIMIT ?",
             (avatar_id, safe_limit),
         )))
         for row in rows:
@@ -88,13 +88,15 @@ class ChatService:
             raise HTTPException(409, "必须项未完成，暂时不能正式使用；可以在预览测试模式中试聊。")
         persona_core = current_persona_core(self.db, avatar_id)
         persona = persona_core["core"].get("persona", self.get_persona(avatar_id))
-        history = self.get_messages(avatar_id, 20, "preview" if preview_mode else "official", include_call_context=True)
+        history = [row for row in self.get_messages(avatar_id, 100, "preview" if preview_mode else "official", include_call_context=True) if not row.get("context_excluded")][-20:]
         memory_rows = self.db.all(
             """SELECT COALESCE(NULLIF(c.corrected_speaker,''),m.speaker) speaker,
                       COALESCE(NULLIF(c.corrected_content,''),m.content) content,m.is_avatar
                FROM memories m LEFT JOIN historical_memory_corrections c ON c.memory_id=m.id
-               WHERE m.avatar_id=? ORDER BY m.id DESC LIMIT 1000""",
-            (avatar_id,),
+               WHERE m.avatar_id=? AND m.confidence>0 AND m.kind NOT IN ('rejected','merged_duplicate')
+                 AND (m.origin_kind<>'runtime_chat' OR m.timeline_kind=?)
+               ORDER BY m.id DESC LIMIT 1000""",
+            (avatar_id, "preview" if preview_mode else "official"),
         )
         memories = relevant_memories(memory_rows, message)
         signature = style_signature(memory_rows)

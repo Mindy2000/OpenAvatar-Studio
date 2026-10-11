@@ -30,7 +30,7 @@ document.addEventListener("click", async event => {
     if (action === "toggle-mobile-menu") return $(".top-actions")?.classList.toggle("open");
     if (action === "settings-tab") return setSettingsTab(event.target.closest("[data-settings-tab]").dataset.settingsTab);
     if (action === "home") { await loadAvatars(); showView("#homeView"); }
-    if (action === "open-onboarding") $("#onboardingDialog").showModal();
+    if (action === "open-onboarding") await openSetupGuide();
     if (action === "complete-onboarding") {
       await api("/api/onboarding", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ completed: true }) });
       $("#onboardingDialog").close();
@@ -105,7 +105,21 @@ document.addEventListener("click", async event => {
     if (action === "open-settings") await openSettings();
     if (action === "set-interface-language") {
       const button = event.target.closest("[data-language]");
-      if (button?.dataset.language) await setInterfaceLanguage(button.dataset.language);
+      if (button?.dataset.language) {
+        // Keep navigation and a second language change from racing the panel refresh.
+        const dialog = $("#settingsDialog");
+        const controls = $$("button", dialog).map(node => [node, node.disabled]);
+        const holdDialog = event => event.preventDefault();
+        controls.forEach(([node]) => { node.disabled = true; });
+        dialog.setAttribute("aria-busy", "true");
+        dialog.addEventListener("cancel", holdDialog);
+        try { await setInterfaceLanguage(button.dataset.language); }
+        finally {
+          controls.forEach(([node, disabled]) => { node.disabled = disabled; });
+          dialog.removeAttribute("aria-busy");
+          dialog.removeEventListener("cancel", holdDialog);
+        }
+      }
     }
     if (action === "open-current") await openAvatar(state.currentId);
     if (action === "skip-guided-question") {
@@ -688,8 +702,8 @@ if (!isFilePreview) {
       await loadWorldOptions();
       await loadHealth();
       await loadAvatars();
-      await loadOnboarding();
       await handleHashAction();
+      await initializeSetupGuide();
       window.setInterval(() => pollProactiveMessages().catch(() => null), 30000);
       window.setInterval(() => pollNotifications().catch(() => null), 15000);
     } catch (error) {

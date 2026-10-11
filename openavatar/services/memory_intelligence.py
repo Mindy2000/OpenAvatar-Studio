@@ -21,7 +21,7 @@ def _tokens(text: str) -> list[str]:
 
 
 def rebuild_memory_graph(db: Database, avatar_id: str, limit: int = 500) -> dict[str, Any]:
-    rows = db.all("SELECT id,speaker,content,kind,is_avatar,confidence,created_at FROM memories WHERE avatar_id=? ORDER BY id DESC LIMIT ?", (avatar_id, min(max(limit, 20), 5000)))
+    rows = db.all("SELECT id,speaker,content,kind,is_avatar,confidence,created_at FROM memories WHERE avatar_id=? AND confidence>0 AND kind NOT IN ('rejected','merged_duplicate') AND (origin_kind<>'runtime_chat' OR timeline_kind='official') ORDER BY id DESC LIMIT ?", (avatar_id, min(max(limit, 20), 5000)))
     now = int(time.time())
     counter: Counter[str] = Counter()
     co: defaultdict[tuple[str, str], int] = defaultdict(int)
@@ -100,6 +100,21 @@ def review_memory(db: Database, avatar_id: str, memory_id: int, action: str, not
     raise ValueError("记忆审核动作不合法")
 
 
+def merged_memory_ids(db: Database, avatar_id: str, source_ids: set[int]) -> set[int]:
+    """Follow recorded merge provenance, including inactive intermediate notes."""
+    edges = []
+    for row in db.all("SELECT memory_id,note FROM memory_revisions WHERE avatar_id=? AND action='merge'", (avatar_id,)):
+        match = re.fullmatch(r"合并 duplicate #(\d+)", row["note"])
+        if match:
+            edges.append((int(match.group(1)), row["memory_id"]))
+    reached = set(source_ids)
+    while True:
+        parents = {parent for child, parent in edges if child in reached}
+        if parents <= reached:
+            return reached
+        reached.update(parents)
+
+
 def merge_memories(db: Database, avatar_id: str, primary_id: int, duplicate_id: int) -> dict[str, Any]:
     if primary_id == duplicate_id:
         raise ValueError("不能将记忆与自身合并")
@@ -109,6 +124,9 @@ def merge_memories(db: Database, avatar_id: str, primary_id: int, duplicate_id: 
         raise KeyError("记忆不存在")
     if any(row["kind"] in {"merged_duplicate", "rejected"} for row in (primary, duplicate)):
         raise ValueError("请选择两条可用记忆；已合并或拒绝的条目不能再次合并")
+    preview_scopes = {row["origin_kind"] == "runtime_chat" and row["timeline_kind"] == "preview" for row in (primary, duplicate)}
+    if len(preview_scopes) > 1:
+        raise ValueError("预览记忆与正式记忆不能合并，请在各自时间线中修改")
     merged = f"{primary['content']}\n{duplicate['content']}"
     revise_memory(db, avatar_id, primary_id, {"content": merged[:100000], "confidence": max(float(primary["confidence"]), float(duplicate["confidence"]))}, action="merge", note=f"合并 duplicate #{duplicate_id}")
     revise_memory(db, avatar_id, duplicate_id, {"kind": "merged_duplicate", "confidence": 0.0}, action="merged_duplicate", note=f"合并到 #{primary_id}")
@@ -116,7 +134,11 @@ def merge_memories(db: Database, avatar_id: str, primary_id: int, duplicate_id: 
 
 
 def sleep_consolidation(db: Database, avatar_id: str, limit: int = 120) -> dict[str, Any]:
-    rows = db.all("SELECT * FROM memories WHERE avatar_id=? AND confidence>0 ORDER BY id DESC LIMIT ?", (avatar_id, min(max(limit, 20), 1000)))
+    # Explicit chat notes keep their source so correcting/forgetting remains reliable.
+    rows = db.all("SELECT * FROM memories WHERE avatar_id=? AND confidence>0 AND kind NOT IN ('rejected','merged_duplicate') AND origin_kind<>'runtime_chat' ORDER BY id DESC LIMIT ?", (avatar_id, min(max(limit, 20), 1000)))
+    explicit_ids = {row["id"] for row in db.all("SELECT id FROM memories WHERE avatar_id=? AND origin_kind='runtime_chat'", (avatar_id,))}
+    protected_ids = merged_memory_ids(db, avatar_id, explicit_ids)
+    rows = [row for row in rows if row["id"] not in protected_ids]
     buckets: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         tokens = _tokens(str(row["content"]))

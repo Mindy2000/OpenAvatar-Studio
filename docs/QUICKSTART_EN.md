@@ -10,6 +10,8 @@ Follow the [installation instructions](GUIDE_EN.md), run the desktop launcher or
 
 **Done when:** The avatar home page appears. If existing avatars are missing, check the launcher's data directory first: source and desktop installations use different defaults.
 
+The unreleased source upgrade automatically shows a three-step setup guide for an empty database without existing configuration. It checks only local configuration and opens existing settings and creation screens without a model call. Skip it and reopen it from the top bar; existing users are not forced into it. The new call and document flows below have not completed live paid-service acceptance; see the [changelog](../CHANGELOG.md) for version scope.
+
 ## 2. Configure a chat service first
 
 Prepare a provider account, an available model, and an API key. Cloud analysis, chat, image understanding, synthesis, and generation may incur charges. Browser speech recognition may also use the browser's own online service.
@@ -72,22 +74,28 @@ For an existing fictional avatar, continue importing from Persona & Materials. T
 | Send a voice note | Switch to the microphone beside the input. Hold to speak, release to send, or slide up while holding and release to cancel | The voice note plays back. Recognized text triggers a reply; without text, only the recording is saved and you can add a text message. Under 0.5 seconds is discarded; the maximum is 60 seconds |
 | Take or send a photo | Choose + → Camera or Images / Video. Selfies are mirrored by default; disable this if needed. Review and send | Preview and sent orientation match. With a Vision route, the photo is read and answered, potentially incurring charges. Saving a photo is not proof of image understanding |
 | Understand an older photo | Use the image-understanding action beside the photo | A success marker appears. Successful results are reused; failures require manual retry. Chat image understanding is separate from material OCR |
-| Send a video or file | Choose + → Images / Video or Files, preview, and send | Videos play and files download; their contents are not automatically interpreted |
+| Send a video or file | Choose + → Images / Video or Files, preview, and send | Videos play and files download. Uploading does not analyze them; supported files offer a separate Read this file action |
+| Read and question a file | Click Read this file, enter a question or leave it blank for a summary, confirm data transfer and charges, and send | Reads only the selected TXT, MD, CSV, or text-layer PDF. Replies have a file source and at most 80 characters. Each explicit submission makes at most one service call, without automatic retry |
+| Remember or correct a statement | Click Memory beside text or a transcribed voice message, edit it, and choose remember, correct, or stop using | Saves locally without a model call. Correction/stopping use excludes the original message and same-turn reply from future context without deleting history |
 | Send a location | Choose + → Location, enter a name and address, and send | A card displays the manually entered location; there is no automatic or continuous location sharing |
 | Save and resend a favorite | Click ☆ beside a message, then choose it from + → Favorites and send | The original appears in favorites and a resent message appears in chat |
 
 Each attachment is limited to 50 MB and the current upload setting. A photo sent in chat does not automatically become persona material. For microphone or camera problems, check browser site permissions. Use text if recognition is unsupported.
 
+**Reading limits are smaller than upload limits:** text files up to 2 MB; PDFs up to 10 MB and 20 pages; all text up to 20,000 characters. Split larger files first. Scanned PDFs and image pages receive no OCR. Ask further file questions explicitly in the file dialog; ordinary chat does not automatically attach the full text.
+
 ## 7. Make a voice call
 
 First check that Chat and Speech Synthesis work, a voice is selected, and microphone access is allowed. Headphones are recommended.
 
-1. Choose + → Calls → Voice in the chat composer, read the notice, and start the call.
+1. Choose + → Calls → Voice in the composer, set duration and the estimated allowance (defaults: ten minutes and CNY 5), read the cost notice, and start.
 2. Say something and wait for the reply. To change the topic, speak directly or use Interrupt reply, then say the new message.
 3. Use the microphone control to mute/unmute. Use the — control to minimize, then click the floating window to return.
 4. Hang up and check the resulting call card in chat.
 
-**Done when:** You hear the selected voice; interruption stops the old reply and continues with the new message; mute and window states work; and recording stops on hangup. Calls are limited to three turns and ten minutes. Hiding the page or switching avatars ends the call.
+**Done when:** You hear the selected voice; interruption stops the old reply and continues with the new message; mute and window states work; and recording stops on hangup. The new flow has no fixed three-turn limit. It ends at the deadline or when the remaining estimated allowance cannot cover the next request. Switching browser tabs does not end the call. Closing or reloading the page, switching avatars, or leaving the in-app chat page ends it.
+
+Set duration from 1–120 minutes and the estimated allowance from CNY 0.01–1,000. This is not a hard cap on provider bills; already-started interrupted/failed requests may still incur charges. Replies retain the same model and voice and play in sentence segments, with up to three TTS requests per reply, which can change per-request billing totals. Local configuration checks or acceptance of older calls do not establish live-service acceptance for this version.
 
 The call window and ordinary chat history do not display per-utterance call transcripts. Those transcripts remain stored locally and may enter later model context. Ordinary voice notes remain visible. Video calls share the Calls menu but need separate North/Atlas configuration; they are not a prerequisite for your first voice call.
 

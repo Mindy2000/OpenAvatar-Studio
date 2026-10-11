@@ -24,6 +24,9 @@ from openavatar.routes.avatars import create_avatars_router
 from openavatar.routes.calls import create_call_router
 from openavatar.routes.chat import create_chat_router
 from openavatar.routes.chat_media import create_chat_media_router
+from openavatar.routes.chat_memory import create_chat_memory_router
+from openavatar.routes.chat_documents import create_chat_documents_router
+from openavatar.routes.setup import create_setup_router
 from openavatar.routes.continuity import create_continuity_router
 from openavatar.routes.identity import create_identity_router
 from openavatar.routes.imports import create_imports_router
@@ -123,6 +126,9 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         create_system_router(context),
         create_avatars_router(context),
         create_chat_media_router(context),
+        create_chat_memory_router(context),
+        create_chat_documents_router(context),
+        create_setup_router(context),
         create_imports_router(context),
         create_world_router(context),
         create_identity_router(context),

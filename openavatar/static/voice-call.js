@@ -1,16 +1,21 @@
 /* Browser recognition sends transcripts to the text gateway; audio replies use
    the avatar's existing TTS route. It never starts a camera or a video session. */
 class VoiceCallController {
-  constructor({avatarId, language = 'zh-CN', status, transcript, changed}) {
-    Object.assign(this, {avatarId, language, status, transcript, changed});
+  constructor({avatarId, language = 'zh-CN', status, transcript, changed, maxMinutes = 10, estimatedBudgetCny = 5, limits = () => {}}) {
+    Object.assign(this, {avatarId, language, status, transcript, changed, maxMinutes, estimatedBudgetCny, limits});
     this.active = false;
     this.muted = false;
     this.turns = 0;
     this.version = 0;
+    this.speechQueue = [];
+    this.audioQueue = [];
+    this.seenSegments = new Set();
   }
   start() {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) throw new Error(tr('当前浏览器不支持语音识别，请使用支持此功能的浏览器。'));
+    if (!Number.isFinite(this.maxMinutes) || this.maxMinutes < 1 || this.maxMinutes > 120) throw new Error(tr('通话时长须在1至120分钟之间'));
+    if (!Number.isFinite(this.estimatedBudgetCny) || this.estimatedBudgetCny < .01 || this.estimatedBudgetCny > 1000) throw new Error(tr('本次估算额度须在0.01至1000元之间'));
     this.active = true;
     this.recognition = new Recognition();
     const r = this.recognition;
@@ -51,14 +56,14 @@ class VoiceCallController {
       if (this.active && !this.muted) this.restartTimer = setTimeout(() => this.listen(), 300);
     };
     const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    this.socket = new WebSocket(`${scheme}//${location.host}/ws/avatars/${encodeURIComponent(this.avatarId)}/call`);
+    const query = new URLSearchParams({voice:'true', max_minutes:this.maxMinutes, estimated_budget_cny:this.estimatedBudgetCny});
+    this.socket = new WebSocket(`${scheme}//${location.host}/ws/avatars/${encodeURIComponent(this.avatarId)}/call?${query}`);
     this.socket.onmessage = event => {
       if (!this.active) return;
       try { this.receive(JSON.parse(event.data)); } catch (_) { this.end(tr('通话返回格式异常，已停止。')); }
     };
     this.socket.onerror = () => this.end(tr('通话连接失败，请检查本机应用。'));
     this.socket.onclose = () => { if (this.active) this.end(tr('通话连接已断开。')); if (typeof state !== 'undefined' && state.currentId === this.avatarId && typeof loadMessages === 'function') loadMessages().catch(()=>{}); };
-    this.limitTimer = setTimeout(() => this.end(tr('已达到10分钟，本次通话结束。')), 600000);
     this.connectTimer = setTimeout(() => { if (!this.ready) this.end(tr('通话连接超时，请检查应用。')); }, 15000);
     this.changed(this);
     this.status(tr('正在连接，尚未开始录音…'));
@@ -137,6 +142,12 @@ class VoiceCallController {
     ++this.version;
     this.runId = null;
     this.pendingTurn = null;
+    this.replyDone = false;
+    this.speechQueue = [];
+    this.audioQueue.forEach(item => URL.revokeObjectURL(item.url));
+    this.audioQueue = [];
+    this.seenSegments.clear();
+    this.fetchingVersion = null;
     this.speechAbort?.abort();
     this.speechAbort = null;
     if (this.audio) { this.audio.pause(); this.audio.removeAttribute('src'); this.audio = null; }
@@ -146,56 +157,106 @@ class VoiceCallController {
   }
   submit(text) {
     if (!this.active || this.muted || !text || !this.ready) return;
-    if (this.turns >= 3) { this.end(tr('已达到3轮，本次通话结束。')); return; }
     this.interrupt();
     this.turns++;
     this.pendingTurn = String(this.version);
     this.transcript(tr`你：${text}`);
-    this.status(tr`正在回复（${this.turns}/3）…`);
+    this.status(tr('正在回复…'));
     this.send({type:'user.text', text, client_turn_id:this.pendingTurn});
   }
   receive(event) {
     if (event.type === 'call.started') {
+      this.callId = event.call_id;
+      this.callToken = event.token;
       this.ready = true;
+      this.limits(event);
       clearTimeout(this.connectTimer);
       this.listen();
       this.startMicMonitor();
+    } else if (event.type === 'call.usage') {
+      this.limits(event);
+    } else if (event.type === 'call.ended') {
+      this.limits(event);
+      this.end(tr(event.message || '语音通话已结束。'));
     } else if (event.type === 'user.committed' && event.client_turn_id === this.pendingTurn) {
       this.runId = event.run_id;
+    } else if (event.type === 'assistant.segment' && this.runId && event.run_id === this.runId) {
+      if (!Number.isInteger(event.segment_id) || event.segment_id < 0 || event.segment_id > 2 || this.seenSegments.has(event.segment_id)) return;
+      this.seenSegments.add(event.segment_id);
+      this.speechQueue.push({runId:event.run_id, segmentId:event.segment_id});
+      this.fetchSpeech(this.version);
     } else if (event.type === 'assistant.done' && this.runId && event.run_id === this.runId) {
       this.transcript(tr`人物：${event.reply}`);
-      this.speak(event.reply, this.version);
+      this.replyDone = true;
+      this.finishReplyIfReady();
     } else if (event.type === 'call.error' && (!event.run_id || event.run_id === this.runId)) {
       this.end(tr`通话已停止：${event.error}`);
     }
   }
-  async speak(text, version) {
-    const controller = new AbortController();
-    this.speechAbort = controller;
-    this.status(tr('正在合成当前人物的声音…'));
+  finishReplyIfReady() {
+    if (!this.active || !this.replyDone || this.audio || this.audioQueue.length || this.speechQueue.length || this.fetchingVersion === this.version) return;
+    this.send({type:'call.played', run_id:this.runId});
+    this.runId = null;
+    this.pendingTurn = null;
+    this.replyDone = false;
+    this.status(this.muted ? tr('麦克风已静音。') : tr('正在听，你可以继续说。'));
+  }
+  async fetchSpeech(version) {
+    // One synthesis request at a time, independently of audio playback. While
+    // sentence one plays, the next sentence can be prepared, never reordered.
+    if (!this.active || version !== this.version || this.fetchingVersion === version) return;
+    this.fetchingVersion = version;
     try {
-      const response = await fetch(`/api/avatars/${encodeURIComponent(this.avatarId)}/speech`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({text, confirm_billable_call:true}), signal:controller.signal,
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.detail || tr`声音请求失败（${response.status}）`);
-      }
-      const blob = await response.blob();
-      if (!this.active || version !== this.version) return;
-      this.audioURL = URL.createObjectURL(blob);
-      this.audio = new Audio(this.audioURL);
-      this.audio.onended = () => {
+      while (this.active && version === this.version && this.speechQueue.length) {
+        const segment = this.speechQueue.shift();
+        const controller = new AbortController();
+        this.speechAbort = controller;
+        if (!this.audio) this.status(tr('正在合成当前人物的声音…'));
+        const response = await fetch(`/api/avatars/${encodeURIComponent(this.avatarId)}/calls/${this.callId}/speech`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({token:this.callToken, run_id:segment.runId, segment_id:segment.segmentId}), signal:controller.signal,
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.detail || tr`声音请求失败（${response.status}）`);
+        }
+        const blob = await response.blob();
         if (!this.active || version !== this.version) return;
-        if (this.turns >= 3) this.end(tr('已完成3轮，本次通话结束。'));
-        else { this.interrupt(); }
-      };
-      this.audio.onerror = () => { if (this.active && version === this.version) this.end(tr('声音播放失败，通话已停止。')); };
-      await this.audio.play();
-      if (this.active && version === this.version) this.status(tr('正在说话；你可以直接开口或点击“打断回复”。'));
+        this.speechAbort = null;
+        this.audioQueue.push({url:URL.createObjectURL(blob), version});
+        this.playNext();
+      }
     } catch (error) {
       if (error.name !== 'AbortError' && this.active && version === this.version) this.end(tr`声音未播放：${error.message}`);
+    } finally {
+      if (version === this.version) {
+        this.fetchingVersion = null;
+        this.speechAbort = null;
+        this.finishReplyIfReady();
+      }
+    }
+  }
+  async playNext() {
+    if (!this.active || this.audio || !this.audioQueue.length) return;
+    const {url, version} = this.audioQueue.shift();
+    if (version !== this.version) { URL.revokeObjectURL(url); return; }
+    this.audioURL = url;
+    const audio = this.audio = new Audio(url);
+    audio.onended = () => {
+      if (!this.active || version !== this.version || this.audio !== audio) return;
+      audio.removeAttribute('src');
+      this.audio = null;
+      this.audioURL = null;
+      URL.revokeObjectURL(url);
+      this.playNext();
+      this.finishReplyIfReady();
+    };
+    audio.onerror = () => { if (this.active && version === this.version) this.end(tr('声音播放失败，通话已停止。')); };
+    try {
+      await audio.play();
+      if (this.active && version === this.version) this.status(tr('正在说话；你可以直接开口或点击“打断回复”。'));
+    } catch (error) {
+      if (this.active && version === this.version) this.end(tr`声音未播放：${error.message}`);
     }
   }
   toggleMute() {
@@ -272,6 +333,7 @@ async function openVoiceWindow() {
   image.hidden = true;
   image.removeAttribute('src');
   $('#voiceCallStatus').textContent = tr('准备好，就和我说说话吧');
+  if ($('#voiceCallLimits')) $('#voiceCallLimits').textContent = '';
   $('#voiceCallBeforeStart').hidden = false;
   $('#voiceCallActions').hidden = true;
   $('#dismissVoiceCall').hidden = true;
@@ -296,6 +358,17 @@ $('#connectVoiceCall').addEventListener('click', () => {
   if (state.videoCall?.id) { $('#voiceCallStatus').textContent = tr('请先结束视频通话。'); return; }
   const primary = state.current?.language_profile?.avatar_primary_language || '';
   activeVoiceCall = new VoiceCallController({
+    maxMinutes:Number($('#voiceCallMaxMinutes')?.value ?? 10),
+    estimatedBudgetCny:Number($('#voiceCallBudget')?.value ?? 5),
+    limits: event => {
+      const node = $('#voiceCallLimits');
+      if (!node) return;
+      const reserved = Number(event.estimated_reserved_cny || 0).toFixed(4);
+      const budget = Number(event.estimated_budget_cny || 0).toFixed(2);
+      const seconds = Math.ceil(event.remaining_seconds || 0);
+      const warning = event.budget_warning ? tr('接近本次估算额度。') : event.time_warning ? tr('即将达到设定时长。') : '';
+      node.textContent = tr`已预留估算 ¥${reserved} / ¥${budget} · 剩余 ${seconds} 秒` + (warning ? ` · ${warning}` : '');
+    },
     avatarId:state.currentId, language:primary === 'en' || primary === 'English' ? 'en-US' : 'zh-CN',
     status: text => {
       $('#voiceCallStatus').textContent = text;
@@ -321,4 +394,3 @@ $('#closeVoiceWindow').addEventListener('click', endVoiceCall);
 $('#dismissVoiceCall').addEventListener('click', endVoiceCall);
 $('#voiceCallDialog').addEventListener('cancel', event => { event.preventDefault(); endVoiceCall(); });
 window.addEventListener('beforeunload', endVoiceCall);
-document.addEventListener('visibilitychange', () => { if (document.hidden) endVoiceCall(); });
